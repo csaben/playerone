@@ -9,11 +9,12 @@ description = "Records a window plus keyboard/mouse/gamepad to agentpc shards; d
 [dependencies]
 agentpc-core.workspace = true
 agentpc-capture.workspace = true
+vigem-client = "0.1"
 agentpc-record.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
-windows = { version = "0.58", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse"] }
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Input_XboxController"] }
 tokio-tungstenite = "0.24"
 futures-util = "0.3"

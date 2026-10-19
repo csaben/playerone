@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use agentpc_core::{Action, AgentId, Dispatcher, Mouse, Provenance, SourceId};
+use agentpc_core::{Action, AgentId, Axes, Buttons, Dispatcher, Mouse, Provenance, SourceId};
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
@@ -162,6 +162,85 @@ fn window_title(root: isize) -> String {
     String::from_utf16_lossy(&buf[..n.max(0) as usize])
 }
 
+/// The agent's virtual Xbox 360 controller (ViGEmBus). XInput can't tell it from a real one, so
+/// the human tap is told its slot and skips it: your real controller still takes over. Level
+/// state: each write is the whole report. Unplugged when the play session ends.
+struct VirtualPad {
+    target: vigem_client::Xbox360Wired<vigem_client::Client>,
+    slot: Option<u32>,
+}
+
+impl VirtualPad {
+    fn new() -> Result<Self, String> {
+        let client = vigem_client::Client::connect().map_err(|e| format!("ViGEmBus not available ({e})"))?;
+        let mut target = vigem_client::Xbox360Wired::new(client, vigem_client::TargetId::XBOX360_WIRED);
+        target.plugin().map_err(|e| format!("virtual pad plugin failed: {e}"))?;
+        target.wait_ready().map_err(|e| format!("virtual pad not ready: {e}"))?;
+        let slot = find_slot(&mut target);
+        match slot {
+            Some(s) => agentpc_capture::virtual_pad_slot(s, true),
+            None => agentpc_capture::virtual_pad_attached(),
+        }
+        log(format!("virtual pad plugged in (XInput slot {slot:?})"));
+        Ok(Self { target, slot })
+    }
+
+    fn write(&mut self, a: &Axes, b: &Buttons) {
+        let mut raw = 0u16;
+        for (on, bit) in [
+            (b.dpad_u, 0x0001u16), (b.dpad_d, 0x0002), (b.dpad_l, 0x0004), (b.dpad_r, 0x0008),
+            (b.start, 0x0010), (b.back, 0x0020), (b.ls, 0x0040), (b.rs, 0x0080),
+            (b.lb, 0x0100), (b.rb, 0x0200), (b.a, 0x1000), (b.b, 0x2000), (b.x, 0x4000), (b.y, 0x8000),
+        ] {
+            if on {
+                raw |= bit;
+            }
+        }
+        let stick = |v: f32| (v.clamp(-1.0, 1.0) * 32767.0) as i16;
+        let trig = |v: f32| (v.clamp(0.0, 1.0) * 255.0) as u8;
+        let report = vigem_client::XGamepad {
+            buttons: vigem_client::XButtons { raw },
+            thumb_lx: stick(a.lx), thumb_ly: stick(a.ly), thumb_rx: stick(a.rx), thumb_ry: stick(a.ry),
+            left_trigger: trig(a.lt), right_trigger: trig(a.rt),
+        };
+        let _ = self.target.update(&report);
+    }
+}
+
+/// Which XInput slot the new pad landed in. ViGEm's own get_user_index can be wrong when a real
+/// controller is also connected, so this writes a signature (stick values inside the deadzone, so
+/// a game reads it as centred) and looks for it, for up to 1.5 s while XInput picks the pad up.
+fn find_slot(target: &mut vigem_client::Xbox360Wired<vigem_client::Client>) -> Option<u32> {
+    use windows::Win32::UI::Input::XboxController::{XInputGetState, XINPUT_STATE};
+    const SIG: (i16, i16) = (1234, -2345);
+    let sig = vigem_client::XGamepad { thumb_lx: SIG.0, thumb_ry: SIG.1, ..Default::default() };
+    let mut found = None;
+    for _ in 0..30 {
+        let _ = target.update(&sig);
+        std::thread::sleep(Duration::from_millis(50));
+        found = (0..4u32).find(|&i| {
+            let mut st = XINPUT_STATE::default();
+            (unsafe { XInputGetState(i, &mut st) }) == 0 && (st.Gamepad.sThumbLX, st.Gamepad.sThumbRY) == SIG
+        });
+        if found.is_some() {
+            break;
+        }
+    }
+    let _ = target.update(&vigem_client::XGamepad::default());
+    found
+}
+
+impl Drop for VirtualPad {
+    fn drop(&mut self) {
+        self.write(&Axes::default(), &Buttons::default());
+        let _ = self.target.unplug();
+        match self.slot {
+            Some(s) => agentpc_capture::virtual_pad_slot(s, false),
+            None => agentpc_capture::virtual_pad_detached(),
+        }
+    }
+}
+
 /// Edge-deriving input sink for one window: through the bridge when Minecraft has it, else
 /// SendInput (which only reaches the window while it is foreground). Cloned: one copy lives in the
 /// Dispatcher, the other lets the play task send the camera and release everything when it stops.
@@ -172,11 +251,13 @@ pub struct InputSink {
     unfocused: bool,
     held: Arc<Mutex<Held>>,
     bridge: Arc<Mutex<Option<Bridge>>>,
+    /// the agent's virtual controller, plugged in once a reply carries "pad"
+    pad: Arc<Mutex<Option<VirtualPad>>>,
 }
 
 impl InputSink {
     pub fn new(root: isize, unfocused: bool) -> Self {
-        Self { root, unfocused, held: Arc::default(), bridge: Arc::default() }
+        Self { root, unfocused, held: Arc::default(), bridge: Arc::default(), pad: Arc::default() }
     }
 
     pub fn focused(&self) -> bool {
@@ -189,6 +270,20 @@ impl InputSink {
         let on = b.is_some();
         *self.bridge.lock().unwrap() = b;
         on
+    }
+
+    /// Plugs in the virtual controller if it isn't yet; false if ViGEmBus isn't available.
+    pub fn ensure_pad(&self) -> Result<bool, String> {
+        let mut p = self.pad.lock().unwrap();
+        if p.is_none() {
+            *p = Some(VirtualPad::new()?);
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    pub fn unplug_pad(&self) {
+        self.pad.lock().unwrap().take();
     }
 
     pub fn bridged(&self) -> bool {
@@ -238,6 +333,13 @@ impl InputSink {
     }
 
     pub fn release_all(&self) {
+        self.release_keys();
+        if let Some(p) = self.pad.lock().unwrap().as_mut() {
+            p.write(&Axes::default(), &Buttons::default());
+        }
+    }
+
+    fn release_keys(&self) {
         if self.bridged() {
             let mut h = self.held.lock().unwrap();
             // once per release: this runs every tick while the agent can't act
@@ -281,6 +383,9 @@ impl agentpc_core::Sink for InputSink {
         let tokens: Vec<String> = action.keys_held.iter().filter(|t| vk_for(t).is_some()).cloned().collect();
         let keys = tokens.iter().filter_map(|t| vk_for(t)).collect();
         self.set(keys, tokens, action.mouse.buttons & 0b11);
+        if let Some(p) = self.pad.lock().unwrap().as_mut() {
+            p.write(&action.axes, &action.buttons);
+        }
         Ok(())
     }
 
@@ -300,12 +405,24 @@ pub struct PlayOpts {
 }
 
 /// One policy reply → the level-state Action (keys + mouse buttons) and this frame's camera move.
+/// A reply's "pad" (agentpc-core Axes/Buttons: sticks [-1,1] with ly +1 up as XInput reports it,
+/// triggers [0,1], the held buttons by name) is level state too.
 fn parse_reply(v: &Value) -> (Action, i32, i32) {
     let keys = v["keys"].as_array().map(|a| a.iter().filter_map(|k| k.as_str().map(String::from)).collect()).unwrap_or_default();
     let mb = |i: usize| v["mb"][i].as_f64().unwrap_or(0.0) > 0.5;
     let buttons = (mb(0) as u8) | ((mb(1) as u8) << 1);
     let cam = |i: usize| v["cam"][i].as_f64().unwrap_or(0.0).round() as i32;
-    (Action { keys_held: keys, mouse: Mouse { buttons, ..Default::default() }, ..Default::default() }, cam(0), cam(1))
+    let p = &v["pad"];
+    let f = |k: &str| p[k].as_f64().unwrap_or(0.0) as f32;
+    let axes = Axes { lx: f("lx"), ly: f("ly"), rx: f("rx"), ry: f("ry"), lt: f("lt"), rt: f("rt") };
+    let held: Vec<&str> = p["buttons"].as_array().map(|a| a.iter().filter_map(|b| b.as_str()).collect()).unwrap_or_default();
+    let on = |name: &str| held.contains(&name);
+    let pad = Buttons {
+        a: on("a"), b: on("b"), x: on("x"), y: on("y"), lb: on("lb"), rb: on("rb"), back: on("back"), start: on("start"),
+        ls: on("ls"), rs: on("rs"), dpad_u: on("dpad_u"), dpad_d: on("dpad_d"), dpad_l: on("dpad_l"), dpad_r: on("dpad_r"),
+    };
+    let mouse = Mouse { buttons, ..Default::default() };
+    (Action { keys_held: keys, axes, buttons: pad, mouse, ..Default::default() }, cam(0), cam(1))
 }
 
 /// Streams the newest frame to the policy and applies its replies until `stop` is set or the
@@ -333,6 +450,7 @@ pub async fn run_policy(
     let bridged = sink.attach_bridge();
     emit(json!({ "event": "bridge", "hwnd": hwnd, "on": bridged }));
     let mut bridge_tried = std::time::Instant::now();
+    let mut pad_failed = false;
     let mut version = Value::Null;
     let mut driving = false;
     // once a second: replies per second and the round trip (send frame → reply), for the dock
@@ -379,6 +497,16 @@ pub async fn run_policy(
                 version = reply["version"].clone();
                 emit(json!({ "event": "policy", "hwnd": hwnd, "version": version, "step": reply["step"] }));
             }
+            if reply["pad"].is_object() && !pad_failed {
+                match sink.ensure_pad() {
+                    Ok(true) => emit(json!({ "event": "pad", "hwnd": hwnd, "on": true })),
+                    Ok(false) => {}
+                    Err(e) => {
+                        pad_failed = true;
+                        emit(json!({ "event": "pad", "hwnd": hwnd, "on": false, "error": e }));
+                    }
+                }
+            }
             let (action, dx, dy) = parse_reply(&reply);
             let now = agentpc_core::now_us();
             let agent_drives = {
@@ -399,6 +527,43 @@ pub async fn run_policy(
     }
     .await;
     sink.release_all();
+    sink.unplug_pad();
     let _ = tx.send(Message::Close(None)).await;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reply_pad_parses_to_level_state() {
+        let v = json!({ "pad": { "lx": 0.5, "ly": -1.0, "rt": 1.0, "buttons": ["a", "dpad_l"] } });
+        let (a, dx, dy) = parse_reply(&v);
+        assert_eq!((a.axes.lx, a.axes.ly, a.axes.rt, a.axes.rx), (0.5, -1.0, 1.0, 0.0));
+        assert!(a.buttons.a && a.buttons.dpad_l && !a.buttons.b);
+        assert!(a.keys_held.is_empty() && (dx, dy) == (0, 0));
+    }
+
+    /// Plugs in a real ViGEm pad (needs ViGEmBus) and reads it back through XInput: run with
+    /// `cargo test -p player-one-rec -- --ignored`. Moves a stick only, no buttons.
+    #[test]
+    #[ignore]
+    fn virtual_pad_reaches_xinput() {
+        use windows::Win32::UI::Input::XboxController::{XInputGetState, XINPUT_STATE};
+        let mut pad = VirtualPad::new().expect("ViGEmBus");
+        let slot = pad.slot.expect("slot");
+        pad.write(&Axes { lx: 0.5, ..Default::default() }, &Buttons::default());
+        std::thread::sleep(Duration::from_millis(100));
+        let mut st = XINPUT_STATE::default();
+        assert_eq!(unsafe { XInputGetState(slot, &mut st) }, 0);
+        assert!((st.Gamepad.sThumbLX as i32 - 16383).abs() < 2, "lx {}", st.Gamepad.sThumbLX);
+        drop(pad);
+        // XInput notices the unplug within a second or so
+        let gone = (0..30).any(|_| {
+            std::thread::sleep(Duration::from_millis(100));
+            (unsafe { XInputGetState(slot, &mut st) }) != 0
+        });
+        assert!(gone, "pad still plugged in");
+    }
 }

@@ -32,7 +32,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 mod human_tap;
 pub mod snapshot;
 pub use human_tap::{
-    connected_pads, devices, set_devices, start_human_tap, virtual_pad_attached, virtual_pad_detached, TapRegistry,
+    connected_pads, devices, set_devices, start_human_tap, virtual_pad_attached, virtual_pad_detached, virtual_pad_slot, TapRegistry,
     TapTarget, DEV_KEYBOARD, DEV_MOUSE, DEV_PADS,
 };
 

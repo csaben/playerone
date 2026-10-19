@@ -67,6 +67,21 @@ pub fn virtual_pad_detached() {
     let _ = VIRTUAL_PADS.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_sub(1));
 }
 
+/// XInput slots held by the agent's own virtual pads (player-one). Unlike [`VIRTUAL_PADS`], only
+/// those slots are skipped, so the human's real controller still takes over while an agent plays
+/// with a virtual one.
+static VIRTUAL_SLOTS: AtomicU8 = AtomicU8::new(0);
+
+/// A virtual pad was plugged in at this XInput slot (0-3): the tap ignores that slot.
+pub fn virtual_pad_slot(slot: u32, attached: bool) {
+    let bit = 1u8 << (slot & 3);
+    if attached {
+        VIRTUAL_SLOTS.fetch_or(bit, Ordering::Relaxed);
+    } else {
+        VIRTUAL_SLOTS.fetch_and(!bit, Ordering::Relaxed);
+    }
+}
+
 /// Which human devices the tap reads (player-one's device settings): bits 0-3 are XInput slots
 /// 1-4, then keyboard and mouse. A device that is off reads as neutral, so it never preempts an
 /// agent and never lands in a recording. Default: everything.
@@ -149,7 +164,7 @@ impl PadPoll {
         let (mut lt, mut rt) = (0u8, 0u8);
         let (mut lx, mut ly, mut rx, mut ry) = (0i16, 0i16, 0i16, 0i16);
         let amax = |a: i16, b: i16| if (b as i32).abs() > (a as i32).abs() { b } else { a };
-        let enabled = DEVICES.load(Ordering::Relaxed);
+        let enabled = DEVICES.load(Ordering::Relaxed) & !VIRTUAL_SLOTS.load(Ordering::Relaxed);
         for slot in 0..4u32 {
             let bit = 1u8 << slot;
             if enabled & bit == 0 {

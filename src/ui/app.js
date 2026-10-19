@@ -200,7 +200,7 @@ function modelRows(m, playing) {
   const plays = playing.map((w) => {
     const a = w.attached;
     const s = a.stats;
-    const sub = s ? `${a.bridge ? 'via mod (plays in background) · ' : ''}rtt ${Math.round(s.rtt)} ms · ${Math.round(s.fps)} fps · model ${(s.infer || 0).toFixed(1)} ms` : esc(a.error || 'connecting…');
+    const sub = s ? `${a.bridge ? 'via mod (plays in background) · ' : ''}${a.pad ? 'virtual controller · ' : ''}rtt ${Math.round(s.rtt)} ms · ${Math.round(s.fps)} fps · model ${(s.infer || 0).toFixed(1)} ms` : esc(a.error || 'connecting…');
     return `<div class="row stat"><span class="ico">${w.icon ? `<img src="${w.icon}" alt="">` : WIN}</span>
       <div class="mid"><div class="t1"><span class="nm">${esc(w.title)}</span></div><div class="t2">${sub}</div></div>${chip(a)}</div>`;
   }).join('');

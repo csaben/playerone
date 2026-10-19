@@ -413,6 +413,14 @@ recorder.on('policy', (m) => {
   const a = attached.get(m.hwnd);
   if (a && a.policy) { a.version = m.version; a.step = m.step; push(); }
 });
+// the model plays with a controller: the sidecar plugged in a virtual Xbox pad (ViGEmBus)
+recorder.on('pad', (m) => {
+  const a = attached.get(m.hwnd);
+  if (!a || !a.policy) return;
+  a.pad = !!m.on;
+  push();
+  if (m.error) note("Can't use a controller", `${m.error}. Install ViGEmBus to let a model play with a controller.`);
+});
 recorder.on('policy_error', (m) => {
   const a = attached.get(m.hwnd);
   if (!a || !a.policy) return;
