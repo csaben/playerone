@@ -190,6 +190,7 @@ function modelRows(m, playing) {
       ? [`behavior clone${ms.step != null ? ` v${ms.step}` : ''}`, `${(ing.minutes || 0).toFixed(1)} min data · new play cam ${pct(fresh.cam_move_acc)} / keys ${pct(fresh.keys_recall)}`]
       : name === 'vpt' ? [`VPT <span style="color:var(--muted);font-weight:500">${esc(String(ms.version || '').replace(/^vpt:/, '').replace(/-2x$/, ''))}</span>`, 'OpenAI pretrained']
       : name === 'vptft' ? vptftLine(ms, m.vpttrain || {})
+      : name === 'nitrogen' ? ['NitroGen', 'NVIDIA open gamepad model · plays with a virtual controller']
       : [esc(name), esc(ms.version || '')];
     const line = [what[1], st ? `rtt ${Math.round(st.rtt)} ms · ${Math.round(st.fps)} fps` : ms.state === 'serving' ? 'ready' : ms.state || '?'].join(' · ');
     const chipTxt = bad.length ? [`${bad.join(', ')} down`, 'error'] : [ms.state === 'serving' ? 'serving' : ms.state || '?', tone(ms.state)];
