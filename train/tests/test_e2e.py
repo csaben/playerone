@@ -155,6 +155,14 @@ def test_end_to_end(tmp_path):
         assert (w1 == D.TAKEOVER_WEIGHT).all()
         assert ds.n_takeover == (N - 10) + (N - 5)
         assert next((data / "cache").rglob("*c00000*.npy")).stat().st_mtime == cache_mtime
+        # desktop (computer-use) recordings are never decoded or trained on by game trainers
+        files3 = make_chunk(src, "sdesk", 2)
+        m3 = json.loads(files3[".meta.json"].read_text())
+        files3[".meta.json"].write_text(json.dumps({**m3, "kind": "desktop"}))
+        for suf in ingest.SUFFIXES:
+            put(base, "sdesk", files3[suf])
+        assert ds.refresh() == 0 and len(ds.chunks) == 2
+        assert not (data / "cache" / "sdesk").exists()
         b = ds.sample(8, 4, np.random.default_rng(0))
         assert b["obs"].shape == (8, 4, 128, 128, 3)
     finally:
@@ -174,7 +182,7 @@ def test_end_to_end(tmp_path):
     assert meta["n_frames"] == 2 * (N - 5)
     st = ingest.status(data)
     json.dumps(st, allow_nan=False)
-    assert st["ingest"]["chunks"] == 2 and st["ingest"]["frames"] == 2 * N
+    assert st["ingest"]["chunks"] == 3 and st["ingest"]["frames"] == 3 * N  # ingest counts the desktop chunk too
     assert st["train"]["state"] == "training" and st["train"]["step"] == 6 and "keys_acc" in st["train"]["train"]
     assert st["train"]["ckpt"]["step"] == 6 and st["serve"]["state"] == "down"
     info = json.loads((data / "ckpt" / "latest.json").read_text())

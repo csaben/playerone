@@ -150,7 +150,15 @@ class Chunk:
     added: float = field(default_factory=time.time)
 
 
+class SkipChunk(Exception):
+    """Chunk deliberately excluded (not an error)."""
+
+
 class ChunkDataset:
+    # meta.json "kind" (default "game"). Desktop/computer-use recordings ("desktop") are private and are
+    # never used by the game trainers unless a caller passes kinds explicitly.
+    kinds: tuple[str, ...] = ("game",)
+
     def __init__(self, root: Path | None = None, include_agent: bool = False, size: int = IMG_SIZE):
         self.root = Path(root) if root else data_dir()
         self.include_agent = include_agent
@@ -181,6 +189,8 @@ class ChunkDataset:
         key = meta_path.name[: -len(".meta.json")]
         d = meta_path.parent
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if meta.get("kind", "game") not in self.kinds:
+            raise SkipChunk(f"kind={meta.get('kind')}")
         cp = self._cache_path(sid, key)
         if not cp.exists():
             arr = self._decode(d / f"{key}.p0.mp4")
@@ -231,6 +241,9 @@ class ChunkDataset:
                 continue
             try:
                 c = self._load_chunk(mp)
+            except SkipChunk:
+                self._seen.add(ident)  # e.g. desktop/computer-use recordings: never decoded, never trained on
+                continue
             except Exception as e:  # noqa: BLE001
                 self._fails[ident] = self._fails.get(ident, 0) + 1
                 print(f"[dataset] failed {ident}: {e!r}", file=sys.stderr, flush=True)

@@ -80,7 +80,7 @@ def test_serve_vptft_hot_reload(tmp_path):
     for f in ("2x.model", WEIGHTS):
         (tmp_path / "vpt" / f).symlink_to(DATA / "vpt" / f)
     port = free_port()
-    proc = subprocess.Popen([sys.executable, str(HERE / "serve.py"), "--policy", "vpt", "--vpt-ft", "--host",
+    proc = subprocess.Popen([sys.executable, str(HERE / "serve.py"), "--policy", "vpt", "--vpt-ft", "--cpu", "--host",
                              "127.0.0.1", "--port", str(port), "--data", str(tmp_path), "--poll-s", "0.5"],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
