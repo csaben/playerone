@@ -1,0 +1,19 @@
+{
+	"schemaVersion": 1,
+	"id": "playerone-bridge",
+	"version": "${version}",
+	"name": "player-one bridge",
+	"description": "Local TCP input bridge so the player-one agent can play while Minecraft is unfocused, without touching the real mouse/keyboard.",
+	"authors": ["player-one"],
+	"license": "MIT",
+	"environment": "client",
+	"entrypoints": {
+		"client": ["org.playerone.bridge.BridgeClient"]
+	},
+	"mixins": ["playerone-bridge.mixins.json"],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.3",
+		"java": ">=25"
+	}
+}

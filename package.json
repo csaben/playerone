@@ -1,0 +1,16 @@
+{
+  "name": "player-one",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows edge dock: pick any window with the keyboard and attach an AI to it",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "electron": "^38.2.0"
+  },
+  "author": "csaben",
+  "license": "MIT"
+}

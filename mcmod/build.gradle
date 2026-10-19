@@ -1,0 +1,43 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+base {
+	archivesName = 'playerone-bridge'
+}
+
+dependencies {
+	// 26.x is unobfuscated: no `mappings` dependency.
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	// No Fabric API: the bridge hooks the client tick / render loop with its own mixins.
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+}
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(25)
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+// Unit tests cover the game-free parts (protocol, controller arbitration, dead-man, camera spreading).
+dependencies {
+	testImplementation platform("org.junit:junit-bom:5.13.4")
+	testImplementation "org.junit.jupiter:junit-jupiter"
+	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+test {
+	useJUnitPlatform()
+}

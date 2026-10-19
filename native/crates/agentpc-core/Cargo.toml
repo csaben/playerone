@@ -1,0 +1,12 @@
+[package]
+name = "agentpc-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Shared I/O abstractions: Action, Observation, provenance, and the Arbiter."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

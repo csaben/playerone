@@ -1,0 +1,30 @@
+# player-one's native side: the window recorder sidecar.
+#
+# crates/agentpc-{core,capture,record} are copied from ../agentpc at 8344d18 (see crates/README.md),
+# so recordings use agentpc's shard format and its trainers read them unchanged.
+[workspace]
+resolver = "2"
+members = [
+    "crates/agentpc-core",
+    "crates/agentpc-capture",
+    "crates/agentpc-record",
+    "rec",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+agentpc-core = { path = "crates/agentpc-core" }
+agentpc-capture = { path = "crates/agentpc-capture" }
+agentpc-record = { path = "crates/agentpc-record" }
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+
+[profile.dev]
+opt-level = 1

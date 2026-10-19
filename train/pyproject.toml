@@ -1,0 +1,31 @@
+[project]
+name = "player-one-train"
+version = "0.1.0"
+description = "Cradle-side ingest + continuous behavior-clone trainer for player-one (Minecraft)"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "numpy>=1.26",
+  "av>=12",
+  "torch>=2.4",
+  "websockets>=13",
+]
+
+[project.optional-dependencies]
+vpt = ["gym3", "gym==0.23.1", "attrs", "opencv-python-headless"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu124", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

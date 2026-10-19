@@ -1,0 +1,16 @@
+{
+	"required": true,
+	"package": "org.playerone.bridge.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"KeyMappingAccessor",
+		"MinecraftMixin",
+		"ToggleKeyMappingAccessor"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

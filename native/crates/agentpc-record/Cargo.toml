@@ -1,0 +1,17 @@
+[package]
+name = "agentpc-record"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Recorder: Arbiter-effective actions + frames -> WebDataset shards (mp4/jsonl/meta/index), labeled by window."
+
+[dependencies]
+agentpc-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tar = "0.4.46"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+sha2 = "0.10"
