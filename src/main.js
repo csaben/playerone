@@ -48,7 +48,7 @@ function loadConfig() {
   // recordFps / recordMaxWidth: capture rate and downscale (0 = full size). ingest: the trainer's
   // ingest server (train/ingest.py); when set, each 4 s chunk is sent there as soon as it closes.
   cfg = {
-    hotkey: 'Control+Alt+B', recordHotkey: 'Control+Alt+S', playHotkey: "Control+Alt+'", agent: DEFAULT, tabY: 0.72,
+    hotkey: 'Control+Alt+;', recordHotkey: 'Control+Alt+S', playHotkey: "Control+Alt+'", agent: DEFAULT, tabY: 0.72,
     devices: 0x3f, dataset: DEFAULT_DATASET, datasets: [], server: 'http://127.0.0.1:8787',
     recordFps: 20, recordMaxWidth: 960, ingest: '', policy: '', playModel: 'bc',
     playUnfocused: true, playYield: true, playResumeMs: 400, playTemp: 1,

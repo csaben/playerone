@@ -2,7 +2,7 @@
 
 A Windows edge dock, styled after [openone](../openone), for attaching an AI to any window.
 
-**Ctrl+Alt+B** opens the panel on a list of your open windows, with the one you were just in selected. **j**/**k** (or arrows) move, **/** fuzzy-searches by app or title (arrows or Ctrl+j/k pick a match), **Enter** attaches, **x** detaches, **Esc** closes.
+**Ctrl+Alt+;** opens the panel on a list of your open windows, with the one you were just in selected. **j**/**k** (or arrows) move, **/** fuzzy-searches by app or title (arrows or Ctrl+j/k pick a match), **Enter** attaches, **x** detaches, **Esc** closes.
 
 Attaching closes the panel, brings that window forward and runs the current agent on it. For now the only agent is a macro that types `hello world` (`src/agents.js`); a real AI goes in there. Typing stops if the window loses the foreground, so keys never land somewhere else. Windows running as admin can't receive keys from a non-admin player-one.
 
@@ -30,7 +30,7 @@ npm start            # or .\start-player-one.cmd
 npm test
 ```
 
-Optional `config.json` next to `package.json` (tray > Open config): `{ "hotkey": "Control+Alt+B", "recordHotkey": "Control+Alt+S", "tabY": 0.72, "display": 0 }`. The record card saves `devices` and `dataset` there too; `hfCmd` / `hfCwd` override how `hf` is run. `tabY` is where the collapsed tab sits on the right edge (0 top, 1 bottom), below openone's by default.
+Optional `config.json` next to `package.json` (tray > Open config): `{ "hotkey": "Control+Alt+;", "recordHotkey": "Control+Alt+S", "tabY": 0.72, "display": 0 }`. The record card saves `devices` and `dataset` there too; `hfCmd` / `hfCwd` override how `hf` is run. `tabY` is where the collapsed tab sits on the right edge (0 top, 1 bottom), below openone's by default.
 
 ## Layout
 
