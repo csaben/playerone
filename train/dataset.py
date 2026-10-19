@@ -25,6 +25,11 @@ CAM_BINS = 11               # per axis; center bin (5) = no move
 CAM_CLIP = 200.0            # raw mouse counts per frame interval, clipped to +-CAM_CLIP
 CAM_MU = 10.0               # mu-law strength (VPT-style): fine bins near 0, coarse at the edges
 CACHE_VERSION = 1
+# gamepad label layout = agentpc-core Axes/Buttons (XInput: sticks [-1,1] with +y up, triggers [0,1]); the same
+# names are used in policy replies' "pad" field
+PAD_AXES: list[str] = ["lx", "ly", "rx", "ry", "lt", "rt"]
+PAD_BUTTONS: list[str] = ["a", "b", "x", "y", "lb", "rb", "back", "start", "ls", "rs",
+                          "dpad_u", "dpad_d", "dpad_l", "dpad_r"]
 TAKEOVER_S = 8.0            # human frames within this many seconds after an agent->human handoff ...
 TAKEOVER_WEIGHT = 3.0       # ... are sampled this many times more often (DAgger-style corrections)
 
@@ -134,8 +139,17 @@ def build_labels(p0: list[dict], events: list[dict], fps: float) -> dict[str, np
         cs_all = np.vstack([np.zeros((1, 2)), np.cumsum(d, 0)])
         cs_h = np.vstack([np.zeros((1, 2)), np.cumsum(d_h, 0)])
         cam_raw = np.where(human[:, None], cs_h[hi] - cs_h[lo], cs_all[hi] - cs_all[lo]).astype(np.float32)
+    # gamepad (XInput level state from p0.jsonl axes/buttons; agentpc-core Axes/Buttons field names)
+    pad_axes = np.zeros((n, len(PAD_AXES)), np.float32)
+    pad_btn = np.zeros((n, len(PAD_BUTTONS)), np.uint8)
+    for i, r in enumerate(p0):
+        ax, bt = r.get("axes") or {}, r.get("buttons") or {}
+        for j, k in enumerate(PAD_AXES):
+            pad_axes[i, j] = float(ax.get(k, 0.0) or 0.0)
+        for j, k in enumerate(PAD_BUTTONS):
+            pad_btn[i, j] = 1 if bt.get(k) else 0
     return {"keys": keys, "mb": mb, "cam": cam_encode(cam_raw), "cam_raw": cam_raw,
-            "human": human, "t_us": t}
+            "pad_axes": pad_axes, "pad_btn": pad_btn, "human": human, "t_us": t}
 
 
 @dataclass

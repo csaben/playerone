@@ -12,6 +12,7 @@ dependencies = [
 
 [project.optional-dependencies]
 vpt = ["gym3", "gym==0.23.1", "attrs", "opencv-python-headless"]
+nitrogen = ["einops", "transformers>=4.50,<5", "pydantic", "diffusers", "polars", "pyyaml", "pillow", "opencv-python-headless"]
 
 [dependency-groups]
 dev = ["pytest>=8"]

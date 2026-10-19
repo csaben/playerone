@@ -40,7 +40,7 @@ def test_serve_vpt(tmp_path):
     for f in ("2x.model", WEIGHTS):
         (tmp_path / "vpt" / f).symlink_to(DATA / "vpt" / f)
     port = free_port()
-    proc = subprocess.Popen([sys.executable, str(HERE / "serve.py"), "--policy", "vpt", "--host", "127.0.0.1",
+    proc = subprocess.Popen([sys.executable, str(HERE / "serve.py"), "--policy", "vpt", "--cpu", "--host", "127.0.0.1",
                              "--port", str(port), "--data", str(tmp_path)], stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
     try:

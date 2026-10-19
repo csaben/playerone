@@ -113,3 +113,23 @@ The fine-tuning loop has the same shape as `train.py`: a 5 s refresh, recent sha
 - **Checkpoint:** `$DATA/vpt-ckpt/latest.weights` (policy state_dict) and `latest.json` (`{version: "vptft:<step>-<ts>", base, step, n_frames, fresh, ...}`).
 - **Serving:** `serve.py --policy vpt --vpt-ft` (tmux `vptft`, :8964) hot-reloads it. The weights load straight to the GPU in a thread, then the server swaps them in between frames with one GPU-to-GPU copy.
 - **Status:** `/status` includes `vpttrain` and `models.vptft`.
+
+## NitroGen backend (`serve.py --policy nitrogen`, tmux window `nitrogen`, port 8965): gamepad
+
+This serves NVIDIA's open gamepad foundation model NitroGen (github MineDojo/NitroGen, weights `nvidia/NitroGen` → `$DATA/nitrogen/ng.pt`). Install with `uv sync --extra nitrogen`; it needs `transformers<5`, since 5.x renamed SigLIP internals.
+
+- **Replies** are `{"pad": {...}, "version", "infer_ms", "step"}`, with **no** `keys`/`mb`/`cam`; absent fields mean the sidecar leaves keyboard and mouse alone.
+- **`pad`** is level state that holds until the next reply: `{"lx","ly","rx","ry"}` in [-1,1] (XInput convention, +y up), `"lt","rt"` in [0,1], and `"buttons"` as a subset of `a b x y lb rb back start ls rs dpad_u dpad_d dpad_l dpad_r`. These are the same names as agentpc-core `Axes`/`Buttons` and `dataset.PAD_*`.
+- **Mapping from model output:**
+  - stick y is negated, since the model is +down;
+  - triggers come from the LEFT/RIGHT_TRIGGER entries of the button vector;
+  - buttons are on above 0.5;
+  - GUIDE and the RIGHT_* alias buttons are dropped;
+  - `start`/`back` are suppressed unless `cfg.allow_menu` is set.
+- **Timing:** one 256×256 frame (cv2 INTER_AREA) produces a chunk of 18 actions for a 60 Hz loop. Each connection replays the chunk by wall clock and re-infers on the newest frame when it runs out. That's about 60 ms per inference, every 0.3 s.
+- **GPU:** weights stay fp32, with bf16 autocast for compute (bf16 weights break a masked_scatter). It uses about 4 GB on GPU 0.
+- **Games:** the released checkpoint carries no game mapping, so it runs unconditionally. `cfg.game` is reserved for later.
+
+Controller labels for fine-tuning: `build_labels` now also returns `pad_axes` (n,6) and `pad_btn` (n,14) from p0.jsonl `axes`/`buttons`.
+
+Note (2026-10-19): the BC `train`/`serve` and base `vpt` tmux windows were stopped to free GPU 0 for NitroGen. Restart them with the commands above if needed.

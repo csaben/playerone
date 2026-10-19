@@ -28,7 +28,7 @@ from websockets.asyncio.server import serve
 from dataset import data_dir, frame_to_rgb
 from model import load_policy, obs_to_tensor
 
-DEFAULT_PORTS = {"bc": 8962, "vpt": 8963, "vptft": 8964}
+DEFAULT_PORTS = {"bc": 8962, "vpt": 8963, "vptft": 8964, "nitrogen": 8965}
 DEFAULT_CFG = {"temperature": 1.0, "key_threshold": 0.5, "sample_camera": True, "sample_keys": False}
 NULL_REPLY = {"keys": [], "mb": [0, 0], "cam": [0, 0], "version": None, "infer_ms": 0.0, "step": None}
 
@@ -141,7 +141,7 @@ def decode_jpeg(codec: av.CodecContext, data: bytes) -> av.VideoFrame:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--policy", choices=["bc", "vpt"], default="bc")
+    ap.add_argument("--policy", choices=["bc", "vpt", "nitrogen"], default="bc")
     ap.add_argument("--vpt-ft", action="store_true",
                     help="with --policy vpt: follow fine-tuned weights in $DATA/vpt-ckpt (name vptft, :8964)")
     ap.add_argument("--host", default="0.0.0.0")
@@ -155,7 +155,10 @@ def main() -> None:
     root = Path(a.data).expanduser() if a.data else data_dir()
     port = a.port or DEFAULT_PORTS["vptft" if a.vpt_ft else a.policy]
     dev = torch.device("cuda" if torch.cuda.is_available() and not a.cpu else "cpu")
-    if a.policy == "vpt":
+    if a.policy == "nitrogen":
+        from nitrogen_backend import NitroGenBackend
+        backend = NitroGenBackend(root, dev)
+    elif a.policy == "vpt":
         from vpt_backend import VPTBackend
         backend = VPTBackend(root, a.vpt_weights, dev)
         if a.vpt_ft:

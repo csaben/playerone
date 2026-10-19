@@ -49,7 +49,7 @@ def make_chunk(out: Path, sid: str, idx: int) -> dict[str, Path]:
         keys = ["W"] if i % 2 == 0 else ["A", "LSHIFT", "F"]
         src = "human" if i < N - 5 else "agent:test"
         p0.append({"frame": i, "frame_id": i, "captured_t_us": t, "t_us": t, "heartbeat": False,
-                   "keys_held": keys, "axes": {}, "buttons": {},
+                   "keys_held": keys, "axes": {"lx": 0.5, "ly": -1.0 if i % 3 == 0 else 0.0, "rx": 0, "ry": 0, "lt": 0.25, "rt": 0}, "buttons": {"a": i % 2 == 0, "dpad_r": True},
                    "mouse": {"dx": 999, "dy": 999, "buttons": 1 if 10 <= i < 20 else 0, "wheel": 0},
                    "source": src})
         ev.append({"schema": "agentpc.trajectory/v3", "seq": seq, "t_us": t, "event": "frame", "source_id": 0,
@@ -199,3 +199,13 @@ def test_end_to_end(tmp_path):
     assert r.returncode == 0, r.stderr
     assert "resumed" in r.stdout
     assert load_policy(ck)[1]["step"] == 8
+
+
+def test_pad_labels():
+    p0 = [{"t_us": i * 50_000, "keys_held": [], "mouse": {"buttons": 0},
+           "axes": {"lx": 0.5, "ly": -1.0, "rx": 0, "ry": 0.25, "lt": 1.0, "rt": 0},
+           "buttons": {"a": i == 0, "dpad_r": True, "start": False}, "source": "human"} for i in range(3)]
+    L = D.build_labels(p0, [], 20)
+    np.testing.assert_allclose(L["pad_axes"][0], [0.5, -1.0, 0, 0.25, 1.0, 0])
+    assert L["pad_btn"][0, D.PAD_BUTTONS.index("a")] == 1 and L["pad_btn"][1, D.PAD_BUTTONS.index("a")] == 0
+    assert L["pad_btn"][:, D.PAD_BUTTONS.index("dpad_r")].all() and not L["pad_btn"][:, D.PAD_BUTTONS.index("start")].any()
