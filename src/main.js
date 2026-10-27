@@ -45,13 +45,14 @@ function loadConfig() {
   // playHotkey: the policy agent starts/stops playing the focused window. policy: the bc server;
   // playModel: which of the trainer's models plays (bc, vpt), each on its own port of that host.
   // playUnfocused / playYield / playResumeMs / playTemp: the Settings view (see PLAY_SETTINGS).
+  // padPassthrough: keep a virtual Xbox pad plugged in that carries your controller (native/rec/src/pad.rs).
   // recordFps / recordMaxWidth: capture rate and downscale (0 = full size). ingest: the trainer's
   // ingest server (train/ingest.py); when set, each 4 s chunk is sent there as soon as it closes.
   cfg = {
     hotkey: 'Control+Alt+;', recordHotkey: 'Control+Alt+S', playHotkey: "Control+Alt+'", agent: DEFAULT, tabY: 0.72,
     devices: 0x3f, dataset: DEFAULT_DATASET, datasets: [], server: 'http://127.0.0.1:8787',
     recordFps: 20, recordMaxWidth: 960, ingest: '', policy: '', playModel: 'bc',
-    playUnfocused: true, playYield: true, playResumeMs: 400, playTemp: 1,
+    playUnfocused: true, playYield: true, playResumeMs: 400, playTemp: 1, padPassthrough: true,
   };
   try { Object.assign(cfg, JSON.parse(fs.readFileSync(CONFIG, 'utf8'))); } catch {}
 }
@@ -150,7 +151,8 @@ function state() {
     agent: { key: cfg.agent, label: (AGENTS[cfg.agent] || AGENTS[DEFAULT]).label },
     rec: { hotkey: cfg.recordHotkey, dataset: cfg.dataset, datasets, devices },
     play: { hotkey: cfg.playHotkey, model: cfg.playModel, bridge: bridgeUp || [...attached.values()].some((a) => a.bridge),
-      unfocused: cfg.playUnfocused, yield: cfg.playYield, resumeMs: cfg.playResumeMs, temp: cfg.playTemp },
+      unfocused: cfg.playUnfocused, yield: cfg.playYield, resumeMs: cfg.playResumeMs, temp: cfg.playTemp,
+      passthrough: cfg.padPassthrough, pad: passthrough },
     model,
   };
 }
@@ -246,12 +248,13 @@ function playPolicy(name) {
 
 // Settings view: which keys it may set, and the values each one cycles through.
 const PLAY_SETTINGS = {
-  playUnfocused: [true, false], playYield: [true, false], playResumeMs: [400, 1000, 3000, 10000], playTemp: [1, 0.5, 0],
+  playUnfocused: [true, false], playYield: [true, false], playResumeMs: [400, 1000, 3000, 10000], playTemp: [1, 0.5, 0], padPassthrough: [true, false],
 };
 function setPlay(name, value) {
   const ok = PLAY_SETTINGS[name];
   if (!ok || !ok.includes(value)) return;
   saveConfig({ [name]: value });
+  if (name === 'padPassthrough') recorder.passthrough(value);
   push();
 }
 
@@ -413,6 +416,9 @@ recorder.on('policy', (m) => {
   const a = attached.get(m.hwnd);
   if (a && a.policy) { a.version = m.version; a.step = m.step; push(); }
 });
+// the passthrough pad (Settings): {on, slot, error} from the sidecar
+let passthrough = { on: false, slot: null, error: null };
+recorder.on('passthrough', (m) => { passthrough = { on: !!m.on, slot: m.slot, error: m.error }; push(); });
 // the model plays with a controller: the sidecar plugged in a virtual Xbox pad (ViGEmBus)
 recorder.on('pad', (m) => {
   const a = attached.get(m.hwnd);
@@ -587,6 +593,7 @@ app.whenReady().then(() => {
   registerHotkey();
   poll();
   pollModel();
+  recorder.on('spawn', () => { if (cfg.padPassthrough) recorder.passthrough(true); });
   if (recorder.start()) recorder.setDevices(cfg.devices).then(loadDevices);
   loadDatasets();
   if (process.env.PO_EXPAND) setTimeout(toggle, 3000);

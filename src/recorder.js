@@ -61,6 +61,7 @@ class Recorder extends EventEmitter {
     });
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (d) => this.log('stderr', d));
+    setImmediate(() => this.emit('spawn'));
     proc.on('exit', (code) => {
       this.log('exit', `code ${code}`);
       if (this.proc === proc) this.proc = null;
@@ -84,6 +85,8 @@ class Recorder extends EventEmitter {
   devices() { return this.request({ op: 'devices' }); }
 
   setDevices(mask) { return this.request({ op: 'set_devices', mask }); }
+
+  passthrough(on) { return this.request({ op: 'passthrough', on: !!on }); }
 
   begin(opts) { return this.request({ op: 'start', ...opts }); }
 

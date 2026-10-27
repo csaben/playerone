@@ -230,8 +230,8 @@ function modelRows(m, playing) {
 
 // The settings view: how a model plays. Each row cycles through the values main.js allows
 // (PLAY_SETTINGS); they apply the next time a window starts playing.
-const PLAY_VALUES = { playUnfocused: [true, false], playYield: [true, false], playResumeMs: [400, 1000, 3000, 10000], playTemp: [1, 0.5, 0] };
-const SET_KEY = { playUnfocused: 'unfocused', playYield: 'yield', playResumeMs: 'resumeMs', playTemp: 'temp' };
+const PLAY_VALUES = { playUnfocused: [true, false], playYield: [true, false], playResumeMs: [400, 1000, 3000, 10000], playTemp: [1, 0.5, 0], padPassthrough: [true, false] };
+const SET_KEY = { playUnfocused: 'unfocused', playYield: 'yield', playResumeMs: 'resumeMs', playTemp: 'temp', padPassthrough: 'passthrough' };
 function settingsCard() {
   const P = S.play || {};
   let i = 0;
@@ -240,12 +240,18 @@ function settingsCard() {
       <div class="mid"><div class="t1"><span class="nm">${name}</span></div><div class="t2">${sub}</div></div>${right}</div>`;
   const check = (on) => `<span class="check ${on ? 'on' : ''}"></span>`;
   const val = (t) => `<span class="val">${t}</span>`;
+  const pd = P.pad || {};
+  // bind the game to the virtual pad once; it carries your controller and the model's
+  const padSub = !P.passthrough ? 'Off: a model gets its own controller only while it plays'
+    : pd.on ? `Bind the game to Xbox 360 Controller ${pd.slot + 1}: it carries your controller and the model's`
+    : pd.error ? esc(pd.error) : 'Plugging in a virtual controller...';
   const temp = { 1: ['Normal', 'Samples the camera like the model learned it'], 0.5: ['Low', 'Steadier: sharper camera choices'], 0: ['Off', 'The likeliest action every frame'] }[P.temp] || [String(P.temp), ''];
   const html = `<div class="head"><h1>Settings <span style="color:var(--muted);font-weight:500;font-size:12.5px">· how a model plays</span></h1><button class="x" data-close>${X}</button></div>
     ${row('playUnfocused', WIN, 'Plays when out of focus', P.bridge ? 'Keeps playing Minecraft while you use other windows' : 'Needs the player-one Minecraft mod (not running)', check(P.unfocused && P.bridge), !P.bridge)}
     ${row('playYield', KEYS, 'Pauses while you play', P.yield ? 'Your input takes over; it picks up after you stop' : 'Shared control: it keeps acting while you play', check(P.yield))}
     ${row('playResumeMs', PAD, 'Picks up after', 'How long you stop before it takes over again', val(`${(P.resumeMs || 0) / 1000} s`), !P.yield)}
-    ${row('playTemp', CLOUD, 'Randomness', temp[1], val(temp[0]))}`;
+    ${row('playTemp', CLOUD, 'Randomness', temp[1], val(temp[0]))}
+    ${row('padPassthrough', PAD, 'Controller passthrough', padSub, check(P.passthrough))}`;
   const hint = '<kbd>j</kbd><kbd>k</kbd> pick · <kbd>Space</kbd> change · applies on next play · <kbd>h</kbd><kbd>l</kbd> views';
   return { html, hint };
 }

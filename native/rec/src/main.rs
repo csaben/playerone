@@ -15,6 +15,9 @@
 //!                                            fps/max_width set the capture profile (process-wide);
 //!                                            stream writes each chunk loose to <dir>/chunks
 //!                                            -> {"session":"s...","dir":"..."}
+//!   {"id":5,"op":"passthrough","on":true}  keep a virtual Xbox pad plugged in that carries your
+//!                                            controller, and a model's while it plays (pad.rs);
+//!                                            {"event":"passthrough","on","slot","error"} follows
 //!   {"id":4,"op":"stop","hwnd":"123"}        replies at once; {"event":"finished"} follows when the
 //!                                            shard is complete (and uploaded, if a repo was given)
 //!
@@ -29,6 +32,7 @@
 //!         {"event":"finished","hwnd","dir","uploaded","error"},
 //!         {"event":"chunk","hwnd","session","key","dir"} (stream only: the chunk's files are in dir).
 
+mod pad;
 mod play;
 
 use std::collections::HashMap;
@@ -307,6 +311,10 @@ fn handle(app: &Arc<App>, req: &Value) -> Result<Value> {
         "set_devices" => {
             agentpc_capture::set_devices(req["mask"].as_u64().context("mask")? as u8);
             Ok(json!({ "enabled": agentpc_capture::devices() }))
+        }
+        "passthrough" => {
+            pad::set_passthrough(req["on"].as_bool().context("on")?);
+            Ok(json!({}))
         }
         "start" => start(app, req),
         "stop" => stop(app, req),

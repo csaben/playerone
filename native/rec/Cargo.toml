@@ -9,7 +9,7 @@ description = "Records a window plus keyboard/mouse/gamepad to agentpc shards; d
 [dependencies]
 agentpc-core.workspace = true
 agentpc-capture.workspace = true
-vigem-client = "0.1"
+vigem-client = { version = "0.1", features = ["unstable_xtarget_notification"] }
 agentpc-record.workspace = true
 anyhow.workspace = true
 serde.workspace = true
