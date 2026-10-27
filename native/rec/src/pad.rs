@@ -160,7 +160,10 @@ fn run(epoch: u64) {
     }
     // take on the real pad's identity, so apps bound to it take this one instead
     let reals = hidhide::real_pads();
-    let id = reals.first().map_or(vigem_client::TargetId::XBOX360_WIRED, |p| vigem_client::TargetId { vendor: p.vendor, product: p.product });
+    let id = reals.first().map_or(vigem_client::TargetId::XBOX360_WIRED, |p| {
+        let (vendor, product) = hidhide::identity(p);
+        vigem_client::TargetId { vendor, product }
+    });
     let mut pad = match plug_as(id) {
         Ok(p) => p,
         Err(e) => {
@@ -214,7 +217,7 @@ fn run(epoch: u64) {
         // a controller was plugged in: hide it too, and if it's the only one, become it
         if real & !seen != 0 {
             let now = hidhide::real_pads();
-            let first = now.first().map(|p| (p.vendor, p.product));
+            let first = now.first().map(hidhide::identity);
             if first.is_some_and(|f| f != (id.vendor, id.product)) {
                 log("passthrough: a different controller, plugging in again as it");
                 set_passthrough(true);

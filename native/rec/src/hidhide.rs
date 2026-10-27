@@ -61,12 +61,37 @@ pub fn real_pads() -> Vec<RealPad> {
         if !d["present"].as_bool().unwrap_or(false) || !upper.contains("&IG_") || on_vigem(container) {
             continue;
         }
-        let hex = |key: &str| upper.split(key).nth(1).and_then(|s| u16::from_str_radix(s.get(..4)?, 16).ok());
-        if let (Some(vendor), Some(product)) = (hex("VID_"), hex("PID_")) {
+        if let Some((vendor, product)) = ids(&upper) {
             pads.push(RealPad { instance: instance.to_string(), vendor, product });
         }
     }
     pads
+}
+
+/// Vendor and product id from a HID instance path, over USB (`VID_045E&PID_02FF&IG_00`), Bluetooth
+/// (`{00001124-…}_VID&0002045E_PID&02FD&IG_00`) or Bluetooth LE (`{00001812-…}_DEV_VID&02045E_PID&0B13&REV…`):
+/// the hex after VID/PID, of which the id is the last four digits (Bluetooth prefixes the vendor
+/// with where the id comes from).
+fn ids(upper: &str) -> Option<(u16, u16)> {
+    let field = |key: &str| {
+        let rest = upper.split(key).nth(1)?.strip_prefix(['_', '&'])?;
+        let hex: String = rest.chars().take_while(|c| c.is_ascii_hexdigit()).collect();
+        u16::from_str_radix(hex.get(hex.len().checked_sub(4)?..)?, 16).ok()
+    };
+    Some((field("VID")?, field("PID")?))
+}
+
+/// The id the passthrough takes on for this pad. A Microsoft pad over Bluetooth reports a
+/// model-specific product id, but over USB every Xbox One/Series pad is 045E:02FF to apps: the
+/// passthrough is always that, so switching between cable and Bluetooth changes nothing an app
+/// bound to the pad can see.
+pub fn identity(p: &RealPad) -> (u16, u16) {
+    let bluetooth = p.instance.starts_with("HID\\{");
+    if bluetooth && p.vendor == 0x045E {
+        (0x045E, 0x02FF)
+    } else {
+        (p.vendor, p.product)
+    }
 }
 
 fn on_vigem(instance: &str) -> bool {
@@ -159,6 +184,15 @@ mod tests {
     fn listing_paths() {
         let out = "--app-reg \"C:\\a b\\x.exe\"\n--app-reg \"D:\\y.exe\"\n";
         assert_eq!(listed(out), vec!["C:\\a b\\x.exe", "D:\\y.exe"]);
+    }
+
+    #[test]
+    fn ids_over_usb_and_bluetooth() {
+        assert_eq!(ids("HID\\VID_045E&PID_02FF&IG_00\\8&2C475C17&3&0000"), Some((0x045E, 0x02FF)));
+        assert_eq!(ids("HID\\{00001124-0000-1000-8000-00805F9B34FB}_VID&0002045E_PID&02FD&IG_00\\9&1&0000"), Some((0x045E, 0x02FD)));
+        assert_eq!(ids("HID\\{00001812-0000-1000-8000-00805F9B34FB}_DEV_VID&02045E_PID&0B13_REV&0509&IG_00\\A&1&0000"), Some((0x045E, 0x0B13)));
+        let bt = RealPad { instance: "HID\\{00001124-0000-1000-8000-00805F9B34FB}_VID&0002045E_PID&02FD&IG_00\\9".into(), vendor: 0x045E, product: 0x02FD };
+        assert_eq!(identity(&bt), (0x045E, 0x02FF));
     }
 
     /// The virtual pads' HID interfaces under the Xbox One id: `cargo test -p player-one-rec vigem_ifaces -- --ignored --nocapture`.
