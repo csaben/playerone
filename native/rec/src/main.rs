@@ -32,6 +32,7 @@
 //!         {"event":"finished","hwnd","dir","uploaded","error"},
 //!         {"event":"chunk","hwnd","session","key","dir"} (stream only: the chunk's files are in dir).
 
+mod hidhide;
 mod pad;
 mod play;
 
@@ -373,4 +374,6 @@ async fn main() {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    // your controller must be visible to apps again before the passthrough disappears
+    pad::shutdown();
 }

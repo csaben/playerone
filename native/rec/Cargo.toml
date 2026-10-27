@@ -15,6 +15,6 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
-windows = { version = "0.58", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Input_XboxController"] }
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Devices_DeviceAndDriverInstallation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Input_XboxController"] }
 tokio-tungstenite = "0.24"
 futures-util = "0.3"

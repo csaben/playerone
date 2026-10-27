@@ -418,7 +418,8 @@ recorder.on('policy', (m) => {
 });
 // the passthrough pad (Settings): {on, slot, error} from the sidecar
 let passthrough = { on: false, slot: null, error: null };
-recorder.on('passthrough', (m) => { passthrough = { on: !!m.on, slot: m.slot, error: m.error }; push(); });
+let quitting = false;
+recorder.on('passthrough', (m) => { passthrough = { on: !!m.on, slot: m.slot, id: m.id, hidden: !!m.hidden, error: m.error }; push(); });
 // the model plays with a controller: the sidecar plugged in a virtual Xbox pad (ViGEmBus)
 recorder.on('pad', (m) => {
   const a = attached.get(m.hwnd);
@@ -468,6 +469,9 @@ shipper.on('failed', (c, e) => {
 });
 recorder.on('exit', () => {
   for (const r of recordings.values()) if (r.status === 'recording' || r.status === 'saving') { r.status = 'error'; r.error = 'recorder exited'; }
+  passthrough = { on: false, slot: null, error: null };
+  // back at once: it holds the controller passthrough, and your real pad may still be hidden from apps
+  if (!quitting) setTimeout(() => { if (!quitting) recorder.start(); }, 1000);
   push();
 });
 
@@ -593,7 +597,8 @@ app.whenReady().then(() => {
   registerHotkey();
   poll();
   pollModel();
-  recorder.on('spawn', () => { if (cfg.padPassthrough) recorder.passthrough(true); });
+  // off also shows a controller a killed sidecar left hidden
+  recorder.on('spawn', () => recorder.passthrough(!!cfg.padPassthrough));
   if (recorder.start()) recorder.setDevices(cfg.devices).then(loadDevices);
   loadDatasets();
   if (process.env.PO_EXPAND) setTimeout(toggle, 3000);
@@ -618,6 +623,7 @@ app.whenReady().then(() => {
 });
 
 app.on('will-quit', () => {
+  quitting = true;
   globalShortcut.unregisterAll();
   helper.stop();
   recorder.stop(); // it finalizes any running recordings before exiting

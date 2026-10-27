@@ -5,8 +5,11 @@
 //! virtual pad that only exists while a model plays. With passthrough on, one virtual pad stays
 //! plugged in and carries your real controller's input, polled every few ms; while a model drives
 //! it carries the model's input merged with yours (buttons OR'd, each axis whichever is further
-//! from centre), so you can always reach in. Bind the game to the "Xbox 360 Controller" once and it
-//! gets both. Rumble the game sends to the virtual pad goes on to the real one(s).
+//! from centre), so you can always reach in. Rumble the game sends to it goes on to the real pad(s).
+//!
+//! Nothing to set up in the game: the passthrough reports your real pad's vendor/product id, and
+//! with HidHide installed the real pad is hidden from every other app (hidhide.rs), so a game
+//! bound to your controller finds the passthrough in its place. Hiding is undone when it stops.
 //!
 //! XInput can't tell a virtual pad from a real one, so every virtual pad's slot is reported to the
 //! human tap, which skips it: recordings and takeover see only your real controller.
@@ -19,7 +22,7 @@ use agentpc_core::{Axes, Buttons};
 use serde_json::json;
 use windows::Win32::UI::Input::XboxController::{XInputGetState, XInputSetState, XINPUT_STATE, XINPUT_VIBRATION};
 
-use crate::{emit, log};
+use crate::{emit, hidhide, log};
 
 pub struct VirtualPad {
     target: vigem_client::Xbox360Wired<vigem_client::Client>,
@@ -28,8 +31,13 @@ pub struct VirtualPad {
 
 impl VirtualPad {
     pub fn new() -> Result<Self, String> {
+        Self::with_id(vigem_client::TargetId::XBOX360_WIRED)
+    }
+
+    /// A pad that reports this vendor/product id (a real controller's, so apps bound to it take this one).
+    pub fn with_id(id: vigem_client::TargetId) -> Result<Self, String> {
         let client = vigem_client::Client::connect().map_err(|e| format!("ViGEmBus not available ({e})"))?;
-        let mut target = vigem_client::Xbox360Wired::new(client, vigem_client::TargetId::XBOX360_WIRED);
+        let mut target = vigem_client::Xbox360Wired::new(client, id);
         target.plugin().map_err(|e| format!("virtual pad plugin failed: {e}"))?;
         target.wait_ready().map_err(|e| format!("virtual pad not ready: {e}"))?;
         let slot = find_slot(&mut target);
@@ -123,6 +131,20 @@ pub fn set_passthrough(on: bool) {
     let epoch = EPOCH.fetch_add(1, Ordering::SeqCst) + 1;
     if on {
         std::thread::spawn(move || run(epoch));
+    } else if !ACTIVE.load(Ordering::SeqCst) {
+        // nothing running to undo it (e.g. the last sidecar was killed while hiding was on)
+        hidhide::unhide();
+    }
+}
+
+/// Stops the passthrough and waits (up to 2 s) until your controller is visible to apps again.
+pub fn shutdown() {
+    set_passthrough(false);
+    for _ in 0..200 {
+        if !ACTIVE.load(Ordering::SeqCst) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -136,7 +158,10 @@ fn run(epoch: u64) {
     while ACTIVE.load(Ordering::SeqCst) && EPOCH.load(Ordering::SeqCst) == epoch {
         std::thread::sleep(POLL);
     }
-    let mut pad = match VirtualPad::new() {
+    // take on the real pad's identity, so apps bound to it take this one instead
+    let reals = hidhide::real_pads();
+    let id = reals.first().map_or(vigem_client::TargetId::XBOX360_WIRED, |p| vigem_client::TargetId { vendor: p.vendor, product: p.product });
+    let mut pad = match VirtualPad::with_id(id) {
         Ok(p) => p,
         Err(e) => {
             emit(json!({ "event": "passthrough", "on": false, "slot": null, "error": e }));
@@ -156,17 +181,31 @@ fn run(epoch: u64) {
         }
         Err(e) => log(format!("passthrough: no rumble ({e})")),
     }
+    let hidden = hide(&reals);
     ACTIVE.store(true, Ordering::SeqCst);
-    emit(json!({ "event": "passthrough", "on": true, "slot": own, "error": null }));
-    log(format!("passthrough pad on (XInput slot {own})"));
+    let id_str = format!("{:04x}:{:04x}", id.vendor, id.product);
+    emit(json!({ "event": "passthrough", "on": true, "slot": own, "id": id_str, "hidden": hidden, "error": null }));
+    log(format!("passthrough pad on (XInput slot {own}, id {id_str}, real pads hidden: {hidden})"));
 
     let mut real = 0u8;
     let mut last = None;
     let mut n = 0u32;
     while EPOCH.load(Ordering::SeqCst) == epoch {
+        let seen = real;
         let human = read_real(own, &mut real, n % PROBE_EVERY == 0);
         n = n.wrapping_add(1);
         REAL.store(real, Ordering::Relaxed);
+        // a controller was plugged in: hide it too, and if it's the only one, become it
+        if real & !seen != 0 {
+            let now = hidhide::real_pads();
+            let first = now.first().map(|p| (p.vendor, p.product));
+            if first.is_some_and(|f| f != (id.vendor, id.product)) {
+                log("passthrough: a different controller, plugging in again as it");
+                set_passthrough(true);
+                break;
+            }
+            hide(&now);
+        }
         let out = match *AGENT.lock().unwrap() {
             Some(agent) => merge(agent, human),
             None => human,
@@ -176,10 +215,26 @@ fn run(epoch: u64) {
         }
         std::thread::sleep(POLL);
     }
+    // your controller comes back for every app before the passthrough goes away
+    hidhide::unhide();
     rumble(0, 0);
     drop(pad);
     ACTIVE.store(false, Ordering::SeqCst);
     emit(json!({ "event": "passthrough", "on": false, "slot": null, "error": null }));
+}
+
+/// Hides the real pads from other apps when HidHide is installed; false if they stay visible.
+fn hide(reals: &[hidhide::RealPad]) -> bool {
+    if reals.is_empty() || !hidhide::installed() {
+        return false;
+    }
+    match hidhide::hide(reals) {
+        Ok(()) => true,
+        Err(e) => {
+            log(format!("passthrough: couldn't hide your controller ({e})"));
+            false
+        }
+    }
 }
 
 /// Every real controller merged into one raw report (no deadzone: the game applies its own).
@@ -278,3 +333,4 @@ mod tests {
         assert!(slot.is_some(), "agent state not on any pad");
     }
 }
+

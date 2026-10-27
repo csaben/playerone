@@ -241,9 +241,9 @@ function settingsCard() {
   const check = (on) => `<span class="check ${on ? 'on' : ''}"></span>`;
   const val = (t) => `<span class="val">${t}</span>`;
   const pd = P.pad || {};
-  // bind the game to the virtual pad once; it carries your controller and the model's
+  // a virtual pad with your controller's identity carries you and the model; HidHide hides the real one
   const padSub = !P.passthrough ? 'Off: a model gets its own controller only while it plays'
-    : pd.on ? `Bind the game to Xbox 360 Controller ${pd.slot + 1}: it carries your controller and the model's`
+    : pd.on ? (pd.hidden ? 'Games see one controller: yours, shared with the model' : 'Install HidHide so games see only the shared controller')
     : pd.error ? esc(pd.error) : 'Plugging in a virtual controller...';
   const temp = { 1: ['Normal', 'Samples the camera like the model learned it'], 0.5: ['Low', 'Steadier: sharper camera choices'], 0: ['Off', 'The likeliest action every frame'] }[P.temp] || [String(P.temp), ''];
   const html = `<div class="head"><h1>Settings <span style="color:var(--muted);font-weight:500;font-size:12.5px">· how a model plays</span></h1><button class="x" data-close>${X}</button></div>
