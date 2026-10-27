@@ -161,7 +161,7 @@ fn run(epoch: u64) {
     // take on the real pad's identity, so apps bound to it take this one instead
     let reals = hidhide::real_pads();
     let id = reals.first().map_or(vigem_client::TargetId::XBOX360_WIRED, |p| vigem_client::TargetId { vendor: p.vendor, product: p.product });
-    let mut pad = match VirtualPad::with_id(id) {
+    let mut pad = match plug_as(id) {
         Ok(p) => p,
         Err(e) => {
             emit(json!({ "event": "passthrough", "on": false, "slot": null, "error": e }));
@@ -356,6 +356,37 @@ impl Nav {
     }
 }
 
+/// Plugs in the passthrough under a real pad's id. If its HID interface lands on 00, which Windows'
+/// xinputhid driver claims and breaks on a virtual pad (see hidhide::vigem_interfaces), a second
+/// one is plugged in while the first still holds 00, and the first is dropped.
+fn plug_as(id: vigem_client::TargetId) -> Result<VirtualPad, String> {
+    let spoofed = id != vigem_client::TargetId::XBOX360_WIRED;
+    let before = hidhide::vigem_interfaces(id.vendor, id.product);
+    let pad = VirtualPad::with_id(id)?;
+    if !spoofed || new_interface(id, &before).as_deref() != Some("00") {
+        return Ok(pad);
+    }
+    log("virtual pad got HID interface 00, which xinputhid breaks; plugging in another");
+    let before = hidhide::vigem_interfaces(id.vendor, id.product);
+    let second = VirtualPad::with_id(id)?;
+    log(format!("virtual pad now on HID interface {:?}", new_interface(id, &before)));
+    drop(pad);
+    Ok(second)
+}
+
+/// The HID interface a just-plugged pad got: the one that wasn't in `before` (waits up to 1.5 s).
+fn new_interface(id: vigem_client::TargetId, before: &[String]) -> Option<String> {
+    for _ in 0..30 {
+        let now = hidhide::vigem_interfaces(id.vendor, id.product);
+        let count = |v: &[String], x: &String| v.iter().filter(|y| *y == x).count();
+        if let Some(x) = now.iter().find(|x| count(&now, x) > count(before, x)) {
+            return Some(x.clone());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    None
+}
+
 /// Hides the real pads from other apps when HidHide is installed; false if they stay visible.
 fn hide(reals: &[hidhide::RealPad]) -> bool {
     if reals.is_empty() || !hidhide::installed() {
@@ -467,6 +498,18 @@ mod tests {
             (unsafe { XInputGetState(slot, &mut st) }) != 0
         });
         assert!(gone, "pad still plugged in");
+    }
+
+    /// While the passthrough holds another interface, a new pad under the Xbox One id lands on 00
+    /// and has to be replaced: `cargo test -p player-one-rec plug_avoids_00 -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn plug_avoids_00() {
+        let id = vigem_client::TargetId { vendor: 0x045E, product: 0x02FF };
+        let pad = plug_as(id).expect("plug");
+        std::thread::sleep(Duration::from_millis(500));
+        println!("interfaces now {:?}", hidhide::vigem_interfaces(id.vendor, id.product));
+        drop(pad);
     }
 
     /// Passthrough with a model holding A and the left stick right: the virtual pad shows both.

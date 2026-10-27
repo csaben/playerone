@@ -12,7 +12,8 @@ use std::process::Command;
 use serde_json::Value;
 use windows::core::PCWSTR;
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_Get_DevNode_Registry_PropertyW, CM_Get_Parent, CM_Locate_DevNodeW, CM_DRP_SERVICE, CM_LOCATE_DEVNODE_NORMAL,
+    CM_Get_DevNode_Registry_PropertyW, CM_Get_Device_ID_ListW, CM_Get_Device_ID_List_SizeW, CM_Get_Parent, CM_Locate_DevNodeW,
+    CM_DRP_SERVICE, CM_GETIDLIST_FILTER_ENUMERATOR, CM_GETIDLIST_FILTER_PRESENT, CM_LOCATE_DEVNODE_NORMAL,
     CR_SUCCESS,
 };
 
@@ -69,20 +70,59 @@ pub fn real_pads() -> Vec<RealPad> {
 }
 
 fn on_vigem(instance: &str) -> bool {
+    under_vigem(instance, 1)
+}
+
+/// Whether the device sits on the ViGEm bus within `levels` parents.
+fn under_vigem(instance: &str, levels: u32) -> bool {
     let id: Vec<u16> = instance.encode_utf16().chain([0]).collect();
     unsafe {
-        let (mut dev, mut parent) = (0u32, 0u32);
-        if CM_Locate_DevNodeW(&mut dev, PCWSTR(id.as_ptr()), CM_LOCATE_DEVNODE_NORMAL) != CR_SUCCESS
-            || CM_Get_Parent(&mut parent, dev, 0) != CR_SUCCESS
-        {
+        let mut dev = 0u32;
+        if CM_Locate_DevNodeW(&mut dev, PCWSTR(id.as_ptr()), CM_LOCATE_DEVNODE_NORMAL) != CR_SUCCESS {
             return false;
         }
-        let mut buf = [0u16; 64];
-        let mut len = (buf.len() * 2) as u32;
-        if CM_Get_DevNode_Registry_PropertyW(parent, CM_DRP_SERVICE, None, Some(buf.as_mut_ptr().cast()), &mut len, 0) != CR_SUCCESS {
-            return false;
+        for _ in 0..levels {
+            let mut parent = 0u32;
+            if CM_Get_Parent(&mut parent, dev, 0) != CR_SUCCESS {
+                return false;
+            }
+            let mut buf = [0u16; 64];
+            let mut len = (buf.len() * 2) as u32;
+            if CM_Get_DevNode_Registry_PropertyW(parent, CM_DRP_SERVICE, None, Some(buf.as_mut_ptr().cast()), &mut len, 0) == CR_SUCCESS
+                && String::from_utf16_lossy(&buf[..(len as usize / 2)]).trim_end_matches('\0').eq_ignore_ascii_case("ViGEmBus")
+            {
+                return true;
+            }
+            dev = parent;
         }
-        String::from_utf16_lossy(&buf[..(len as usize / 2)]).trim_end_matches('\0').eq_ignore_ascii_case("ViGEmBus")
+        false
+    }
+}
+
+/// The HID interfaces (IG_xx) of present ViGEm pads with this vendor/product id.
+///
+/// A virtual pad's HID interface number is handed out when it's plugged in. Interface 00 under a
+/// real Xbox One pad's id (045E:02FF&IG_00) is exactly what Windows' xinputhid driver claims, and
+/// on a virtual pad that driver fails: XInput still works but the HID device apps like Eden read
+/// (SDL raw input) is broken.
+pub fn vigem_interfaces(vendor: u16, product: u16) -> Vec<String> {
+    let prefix = format!("HID\\VID_{vendor:04X}&PID_{product:04X}&IG_");
+    let filter: Vec<u16> = "HID".encode_utf16().chain([0]).collect();
+    let flags = CM_GETIDLIST_FILTER_ENUMERATOR | CM_GETIDLIST_FILTER_PRESENT;
+    unsafe {
+        let mut len = 0u32;
+        if CM_Get_Device_ID_List_SizeW(&mut len, PCWSTR(filter.as_ptr()), flags) != CR_SUCCESS {
+            return Vec::new();
+        }
+        let mut buf = vec![0u16; len as usize];
+        if CM_Get_Device_ID_ListW(PCWSTR(filter.as_ptr()), &mut buf, flags) != CR_SUCCESS {
+            return Vec::new();
+        }
+        String::from_utf16_lossy(&buf)
+            .split('\0')
+            .filter(|id| id.to_ascii_uppercase().starts_with(&prefix) && under_vigem(id, 4))
+            .map(|id| id.to_ascii_uppercase()[prefix.len()..].chars().take(2).collect())
+            .collect()
     }
 }
 
@@ -119,6 +159,13 @@ mod tests {
     fn listing_paths() {
         let out = "--app-reg \"C:\\a b\\x.exe\"\n--app-reg \"D:\\y.exe\"\n";
         assert_eq!(listed(out), vec!["C:\\a b\\x.exe", "D:\\y.exe"]);
+    }
+
+    /// The virtual pads' HID interfaces under the Xbox One id: `cargo test -p player-one-rec vigem_ifaces -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn vigem_ifaces() {
+        println!("interfaces {:?}", vigem_interfaces(0x045E, 0x02FF));
     }
 
     /// Lists the real XInput pads (needs HidHide): `cargo test -p player-one-rec real_pads -- --ignored --nocapture`.
