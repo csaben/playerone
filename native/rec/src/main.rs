@@ -18,6 +18,9 @@
 //!   {"id":5,"op":"passthrough","on":true}  keep a virtual Xbox pad plugged in that carries your
 //!                                            controller, and a model's while it plays (pad.rs);
 //!                                            {"event":"passthrough","on","slot","error"} follows
+//!   {"id":6,"op":"pad_menu","on":true}     the panel has the pad: it stops reaching the game and
+//!                                            its presses arrive as {"event":"pad_nav","btn"};
+//!                                            View + Start sends {"event":"pad_menu"} (open/close)
 //!   {"id":4,"op":"stop","hwnd":"123"}        replies at once; {"event":"finished"} follows when the
 //!                                            shard is complete (and uploaded, if a repo was given)
 //!
@@ -312,6 +315,10 @@ fn handle(app: &Arc<App>, req: &Value) -> Result<Value> {
         "set_devices" => {
             agentpc_capture::set_devices(req["mask"].as_u64().context("mask")? as u8);
             Ok(json!({ "enabled": agentpc_capture::devices() }))
+        }
+        "pad_menu" => {
+            pad::set_menu(req["on"].as_bool().context("on")?);
+            Ok(json!({}))
         }
         "passthrough" => {
             pad::set_passthrough(req["on"].as_bool().context("on")?);

@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('po', {
   on: (channel, fn) => {
-    if (['state', 'collapse', 'expand', 'toast'].includes(channel)) {
+    if (['state', 'collapse', 'expand', 'expand-pad', 'pad', 'toast'].includes(channel)) {
       ipcRenderer.on(channel, (_e, data) => fn(data));
     }
   },

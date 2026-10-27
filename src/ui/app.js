@@ -8,6 +8,7 @@ let view = 'windows'; // 'windows' | 'rec'
 let kb = -1;
 let sig = '';
 let hintTimer = null;
+let padMode = false;
 let query = null; // the "/" search: null when closed
 let wantPrev = false; // just opened: select the window you were in once main says which
 
@@ -307,7 +308,9 @@ function recCard() {
 function render() {
   renderChrome();
   if (!expanded) return;
-  const { html, hint } = view === 'rec' ? recCard() : view === 'model' ? modelCard() : view === 'settings' ? settingsCard() : windowsCard();
+  const card = view === 'rec' ? recCard() : view === 'model' ? modelCard() : view === 'settings' ? settingsCard() : windowsCard();
+  const { html } = card;
+  const hint = padMode ? PAD_HINT : card.hint;
   const next = `${view}|${html}|${hint}`;
   if (next !== sig) {
     // keep the search or dataset box focused, caret and all, across the rebuild
@@ -344,7 +347,9 @@ function layout() {
 
 // ---------- actions ----------
 
-function expand(prev) {
+// pad: opened from the controller (View + Start), so the game keeps focus and the pad drives the panel
+function expand(prev, pad) {
+  padMode = !!pad;
   if (prev) S.prev = prev;
   expanded = true;
   view = 'windows';
@@ -358,7 +363,7 @@ function expand(prev) {
   sig = '';
   $('#hint').dataset.text = '';
   render();
-  window.po.focus();
+  if (!pad) window.po.focus();
 }
 
 function collapse() {
@@ -510,7 +515,7 @@ function datasetKey(e) {
   else if (e.key === 'Tab') e.preventDefault();
 }
 
-document.addEventListener('keydown', (e) => {
+function onKey(e) {
   if (!expanded) return;
   if (e.target.id === 'q') return searchKey(e);
   if (e.target.id === 'ds') return datasetKey(e);
@@ -535,7 +540,20 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'x') { const row = selected(); if (row) detach(row.dataset.attach); }
   else if (e.key === 'r') { const row = selected(); if (row) record(row.dataset.attach); }
   else if (e.key === 'b') { const row = selected(); if (row) play(row.dataset.attach); }
+}
+document.addEventListener('keydown', onKey);
+
+// the controller, while it has the panel: its presses become the keys above
+const PAD_KEYS = { up: 'k', down: 'j', left: 'h', right: 'l', lb: 'h', rb: 'l', a: 'Enter', b: 'Escape', x: 'r', y: 'b' };
+const PAD_HINT = '<kbd>A</kbd> select · <kbd>X</kbd> record · <kbd>Y</kbd> play · <kbd>B</kbd> back · <kbd>LB</kbd><kbd>RB</kbd> views · <kbd>View</kbd>+<kbd>Start</kbd> close';
+window.po.on('pad', (btn) => {
+  const key = PAD_KEYS[btn];
+  if (!key || !expanded) return;
+  if (document.activeElement) document.activeElement.blur();
+  onKey({ key, shiftKey: false, ctrlKey: false, target: document.body, preventDefault() {} });
+  showHint(true);
 });
+window.po.on('expand-pad', (prev) => expand(prev, true));
 
 window.po.on('state', (s) => { S = s; if (wantPrev && expanded && query === null && view === 'windows') selectPrev(); render(); });
 window.po.on('collapse', collapse);

@@ -16,7 +16,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use agentpc_core::{Axes, Buttons};
 use serde_json::json;
@@ -190,9 +190,25 @@ fn run(epoch: u64) {
     let mut real = 0u8;
     let mut last = None;
     let mut n = 0u32;
+    let mut chord = Chord::default();
+    let mut nav: Option<Nav> = None;
     while EPOCH.load(Ordering::SeqCst) == epoch {
         let seen = real;
-        let human = read_real(own, &mut real, n % PROBE_EVERY == 0);
+        let mut human = read_real(own, &mut real, n % PROBE_EVERY == 0);
+        let now = Instant::now();
+        let raw = human.buttons.raw;
+        let (menu_btns, fired) = chord.step(now, raw);
+        human.buttons.raw = (raw & !MENU_BTNS) | menu_btns;
+        if fired {
+            emit(json!({ "event": "pad_menu" }));
+        }
+        // the panel has the pad: the game gets only the model
+        if MENU.load(Ordering::Relaxed) {
+            nav.get_or_insert_with(|| Nav::new(raw)).step(now, &human);
+            human = vigem_client::XGamepad::default();
+        } else {
+            nav = None;
+        }
         n = n.wrapping_add(1);
         REAL.store(real, Ordering::Relaxed);
         // a controller was plugged in: hide it too, and if it's the only one, become it
@@ -221,6 +237,123 @@ fn run(epoch: u64) {
     drop(pad);
     ACTIVE.store(false, Ordering::SeqCst);
     emit(json!({ "event": "passthrough", "on": false, "slot": null, "error": null }));
+}
+
+/// View + Start: opens and closes player-one's panel.
+const MENU_BTNS: u16 = 0x0030;
+/// How long View or Start alone is held back, waiting to see if the other joins it.
+const CHORD_WINDOW: Duration = Duration::from_millis(100);
+/// A quick tap that was held back is still delivered, pressed this long.
+const TAP: Duration = Duration::from_millis(50);
+
+/// The panel has the pad (the dock says so with `{"op":"pad_menu","on":true}`).
+static MENU: AtomicBool = AtomicBool::new(false);
+
+pub fn set_menu(on: bool) {
+    MENU.store(on, Ordering::Relaxed);
+    agentpc_capture::set_pad_muted(on);
+}
+
+/// Spots View + Start without the game seeing either: one of them alone is held back for
+/// CHORD_WINDOW, then passed on late (a tap still arrives, as a short press).
+#[derive(Default)]
+struct Chord {
+    /// the lone menu button that's down, and since when
+    down: Option<(u16, Instant)>,
+    /// both were pressed: neither goes through until both are up again
+    swallow: bool,
+    /// a held-back tap being replayed: (bits, until)
+    tap: Option<(u16, Instant)>,
+}
+
+impl Chord {
+    /// The menu buttons to pass on this poll, and whether the chord just fired.
+    fn step(&mut self, now: Instant, raw: u16) -> (u16, bool) {
+        let m = raw & MENU_BTNS;
+        if self.swallow {
+            self.swallow = m != 0;
+            return (0, false);
+        }
+        if m == MENU_BTNS {
+            *self = Self { swallow: true, ..Self::default() };
+            return (0, true);
+        }
+        let mut out = 0;
+        match self.tap {
+            Some((bits, until)) if now < until => out |= bits,
+            _ => self.tap = None,
+        }
+        if m == 0 {
+            if let Some((bits, since)) = self.down.take() {
+                if now - since < CHORD_WINDOW {
+                    self.tap = Some((bits, now + TAP));
+                    out |= bits;
+                }
+            }
+            return (out, false);
+        }
+        let since = match self.down {
+            Some((_, since)) => since,
+            None => now,
+        };
+        self.down = Some((m, since));
+        if now - since >= CHORD_WINDOW {
+            out |= m;
+        }
+        (out, false)
+    }
+}
+
+const NAV_FIRST: Duration = Duration::from_millis(350);
+const NAV_REPEAT: Duration = Duration::from_millis(110);
+
+/// Menu mode: the pad's presses as `{"event":"pad_nav","btn"}` for the panel. Directions (d-pad or
+/// left stick) repeat while held; buttons fire on press.
+struct Nav {
+    prev: u16,
+    dir: Option<(&'static str, Instant)>,
+}
+
+impl Nav {
+    /// starts from the buttons already down, so the press that opened the panel isn't a click
+    fn new(raw: u16) -> Self {
+        Self { prev: raw, dir: None }
+    }
+
+    fn step(&mut self, now: Instant, g: &vigem_client::XGamepad) {
+        let b = g.buttons.raw;
+        for (bit, name) in [(0x1000u16, "a"), (0x2000, "b"), (0x4000, "x"), (0x8000, "y"), (0x0100, "lb"), (0x0200, "rb")] {
+            if b & bit != 0 && self.prev & bit == 0 {
+                emit(json!({ "event": "pad_nav", "btn": name }));
+            }
+        }
+        self.prev = b;
+        const TILT: i16 = 16000;
+        let dir = if b & 0x0001 != 0 || g.thumb_ly > TILT {
+            Some("up")
+        } else if b & 0x0002 != 0 || g.thumb_ly < -TILT {
+            Some("down")
+        } else if b & 0x0004 != 0 || g.thumb_lx < -TILT {
+            Some("left")
+        } else if b & 0x0008 != 0 || g.thumb_lx > TILT {
+            Some("right")
+        } else {
+            None
+        };
+        match (dir, self.dir) {
+            (None, _) => self.dir = None,
+            (Some(d), Some((held, next))) if d == held => {
+                if now >= next {
+                    emit(json!({ "event": "pad_nav", "btn": d }));
+                    self.dir = Some((d, now + NAV_REPEAT));
+                }
+            }
+            (Some(d), _) => {
+                emit(json!({ "event": "pad_nav", "btn": d }));
+                self.dir = Some((d, now + NAV_FIRST));
+            }
+        }
+    }
 }
 
 /// Hides the real pads from other apps when HidHide is installed; false if they stay visible.
@@ -285,6 +418,26 @@ fn rumble(large: u8, small: u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chord_holds_back_view_and_start() {
+        let t0 = Instant::now();
+        let ms = |n: u64| t0 + Duration::from_millis(n);
+        let mut c = Chord::default();
+        // View then Start 40 ms later: the chord, and the game never sees either
+        assert_eq!(c.step(ms(0), 0x0020), (0, false));
+        assert_eq!(c.step(ms(40), 0x0030), (0, true));
+        assert_eq!(c.step(ms(60), 0x0010), (0, false));
+        assert_eq!(c.step(ms(80), 0), (0, false));
+        // a quick View tap is replayed as a short press
+        assert_eq!(c.step(ms(200), 0x0020), (0, false));
+        assert_eq!(c.step(ms(230), 0), (0x0020, false));
+        assert_eq!(c.step(ms(260), 0), (0x0020, false));
+        assert_eq!(c.step(ms(300), 0), (0, false));
+        // a held Start goes through after the window
+        assert_eq!(c.step(ms(400), 0x1010), (0, false));
+        assert_eq!(c.step(ms(520), 0x1010), (0x0010, false));
+    }
 
     #[test]
     fn merge_ors_buttons_and_keeps_the_further_axis() {

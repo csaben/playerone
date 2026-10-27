@@ -420,6 +420,26 @@ recorder.on('policy', (m) => {
 let passthrough = { on: false, slot: null, error: null };
 let quitting = false;
 recorder.on('passthrough', (m) => { passthrough = { on: !!m.on, slot: m.slot, id: m.id, hidden: !!m.hidden, error: m.error }; push(); });
+
+// View + Start on the controller opens the panel without taking focus from the game; until it
+// closes, the pad drives the panel (its presses arrive as pad_nav) instead of the game.
+let padMode = false;
+function setPadMode(on) {
+  if (on === padMode) return;
+  padMode = on;
+  recorder.padMenu(on);
+}
+recorder.on('pad_menu', async () => {
+  if (expanded) { win.webContents.send('collapse'); return; }
+  const fg = await helper.fg();
+  if (fg.ok && fg.hwnd) { prev = String(fg.hwnd); push(); }
+  if (size !== 'full') { size = 'full'; place(); }
+  win.showInactive();
+  win.webContents.send('expand-pad', prev);
+  setPadMode(true);
+  refresh().catch(() => {});
+});
+recorder.on('pad_nav', (m) => { if (padMode) win.webContents.send('pad', m.btn); });
 // the model plays with a controller: the sidecar plugged in a virtual Xbox pad (ViGEmBus)
 recorder.on('pad', (m) => {
   const a = attached.get(m.hwnd);
@@ -470,6 +490,7 @@ shipper.on('failed', (c, e) => {
 recorder.on('exit', () => {
   for (const r of recordings.values()) if (r.status === 'recording' || r.status === 'saving') { r.status = 'error'; r.error = 'recorder exited'; }
   passthrough = { on: false, slot: null, error: null };
+  padMode = false;
   // back at once: it holds the controller passthrough, and your real pad may still be hidden from apps
   if (!quitting) setTimeout(() => { if (!quitting) recorder.start(); }, 1000);
   push();
@@ -608,7 +629,7 @@ app.whenReady().then(() => {
   ipcMain.on('ui:focus', () => { win.focus(); win.webContents.focus(); });
   ipcMain.on('ui:menu', () => Menu.buildFromTemplate(menuTemplate()).popup({ window: win }));
   ipcMain.on('ui:ready', () => { lastState = ''; push(); });
-  ipcMain.on('ui:expanded', (_e, v) => { expanded = !!v; });
+  ipcMain.on('ui:expanded', (_e, v) => { expanded = !!v; if (!expanded) setPadMode(false); });
   ipcMain.handle('win:attach', (_e, key) => attach(String(key)));
   ipcMain.handle('win:detach', (_e, key) => detach(String(key)));
   ipcMain.handle('win:play', (_e, key) => togglePlay(String(key)));

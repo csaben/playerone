@@ -24,7 +24,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::ffi::c_void;
 use std::mem::size_of;
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agentpc_core::{token_for_vk, Action, Axes, Buttons, Dispatcher, InputDevice, Mouse, RawInputBuffer, RawInputEvent, SourceId};
@@ -80,6 +80,14 @@ pub fn virtual_pad_slot(slot: u32, attached: bool) {
     } else {
         VIRTUAL_SLOTS.fetch_and(!bit, Ordering::Relaxed);
     }
+}
+
+/// The pad is driving player-one's panel (pad.rs menu mode), not the game: it reads as neutral,
+/// so browsing neither takes over from a playing model nor lands in the recording as play.
+static PAD_MUTED: AtomicBool = AtomicBool::new(false);
+
+pub fn set_pad_muted(muted: bool) {
+    PAD_MUTED.store(muted, Ordering::Relaxed);
 }
 
 /// Which human devices the tap reads (player-one's device settings): bits 0-3 are XInput slots
@@ -155,7 +163,7 @@ impl PadPoll {
     /// Suspended (neutral) while an agent's virtual pad exists — see [`VIRTUAL_PADS`].
     fn poll(&mut self) -> (Buttons, Axes, PadKey) {
         use windows::Win32::UI::Input::XboxController::{XInputGetState, XINPUT_STATE};
-        if VIRTUAL_PADS.load(Ordering::Relaxed) > 0 {
+        if VIRTUAL_PADS.load(Ordering::Relaxed) > 0 || PAD_MUTED.load(Ordering::Relaxed) {
             return (Buttons::default(), Axes::default(), PAD_NEUTRAL);
         }
         let probe_all = self.reprobe == 0;

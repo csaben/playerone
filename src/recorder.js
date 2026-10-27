@@ -88,6 +88,8 @@ class Recorder extends EventEmitter {
 
   passthrough(on) { return this.request({ op: 'passthrough', on: !!on }); }
 
+  padMenu(on) { return this.request({ op: 'pad_menu', on: !!on }); }
+
   begin(opts) { return this.request({ op: 'start', ...opts }); }
 
   end(hwnd) { return this.request({ op: 'stop', hwnd }); }
