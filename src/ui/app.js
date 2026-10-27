@@ -158,6 +158,16 @@ function vptftLine(ms, vt) {
   return [`VPT tuned${ms.step != null ? ` v${ms.step}` : ''}`, `on your play · ${sub}`];
 }
 
+// NitroGen fine-tuned on your controller play: its step, and how its sticks do on new play (the
+// trainer's first score is the base model's, at step 0)
+function ngftLine(ms, nt) {
+  const f = nt.fresh || {};
+  const mae = (v) => (v == null ? '–' : Number(v).toFixed(2));
+  const sub = f.at_step > 0 ? `new play stick err ${mae(f.stick_mae)} / buttons ${pct(f.btn_recall)}`
+    : `${/cap/.test(nt.state || '') ? 'tuned, waiting for more play' : esc((nt.state || 'tuning').split(':')[0])}`;
+  return [`NitroGen tuned${ms.step ? ` v${ms.step}` : ''}`, `on your controller play · ${sub}`];
+}
+
 function modelRows(m, playing) {
   const stat = (ico, name, sub, st) => `<div class="row stat"><span class="ico">${ico}</span>
       <div class="mid"><div class="t1"><span class="nm">${name}</span></div><div class="t2">${sub}</div></div>
@@ -191,6 +201,7 @@ function modelRows(m, playing) {
       : name === 'vpt' ? [`VPT <span style="color:var(--muted);font-weight:500">${esc(String(ms.version || '').replace(/^vpt:/, '').replace(/-2x$/, ''))}</span>`, 'OpenAI pretrained']
       : name === 'vptft' ? vptftLine(ms, m.vpttrain || {})
       : name === 'nitrogen' ? ['NitroGen', 'NVIDIA open gamepad model · plays with a virtual controller']
+      : name === 'ngft' ? ngftLine(ms, m.ngtrain || {})
       : [esc(name), esc(ms.version || '')];
     const line = [what[1], st ? `rtt ${Math.round(st.rtt)} ms · ${Math.round(st.fps)} fps` : ms.state === 'serving' ? 'ready' : ms.state || '?'].join(' · ');
     const chipTxt = bad.length ? [`${bad.join(', ')} down`, 'error'] : [ms.state === 'serving' ? 'serving' : ms.state || '?', tone(ms.state)];

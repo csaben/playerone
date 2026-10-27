@@ -2,6 +2,8 @@
 
   --policy bc   (default, :8962) our small CNN, hot-reloads $DATA/ckpt/latest.pt when ckpt/latest.json changes
   --policy vpt  (:8963)          OpenAI VPT (recurrent, per-connection hidden state); see vpt_backend.py
+  --policy nitrogen (:8965)      NVIDIA NitroGen gamepad model, replies carry "pad"; with --ng-ft (:8966) it
+                                 follows nitrogen_train.py's fine-tune in $DATA/ng-ckpt
 
 Client -> server
   binary: one JPEG frame of the game window (any size; each backend preprocesses like its training data)
@@ -28,7 +30,7 @@ from websockets.asyncio.server import serve
 from dataset import data_dir, frame_to_rgb
 from model import load_policy, obs_to_tensor
 
-DEFAULT_PORTS = {"bc": 8962, "vpt": 8963, "vptft": 8964, "nitrogen": 8965}
+DEFAULT_PORTS = {"bc": 8962, "vpt": 8963, "vptft": 8964, "nitrogen": 8965, "ngft": 8966}
 DEFAULT_CFG = {"temperature": 1.0, "key_threshold": 0.5, "sample_camera": True, "sample_keys": False}
 NULL_REPLY = {"keys": [], "mb": [0, 0], "cam": [0, 0], "version": None, "infer_ms": 0.0, "step": None}
 
@@ -144,6 +146,8 @@ def main() -> None:
     ap.add_argument("--policy", choices=["bc", "vpt", "nitrogen"], default="bc")
     ap.add_argument("--vpt-ft", action="store_true",
                     help="with --policy vpt: follow fine-tuned weights in $DATA/vpt-ckpt (name vptft, :8964)")
+    ap.add_argument("--ng-ft", action="store_true",
+                    help="with --policy nitrogen: follow fine-tuned weights in $DATA/ng-ckpt (name ngft, :8966)")
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=None, help="default 8962 (bc) / 8963 (vpt)")
     ap.add_argument("--data", default=None)
@@ -153,11 +157,13 @@ def main() -> None:
                     help="file in $DATA/vpt (or a path); see vpt_backend.py")
     a = ap.parse_args()
     root = Path(a.data).expanduser() if a.data else data_dir()
-    port = a.port or DEFAULT_PORTS["vptft" if a.vpt_ft else a.policy]
+    port = a.port or DEFAULT_PORTS["vptft" if a.vpt_ft else "ngft" if a.ng_ft else a.policy]
     dev = torch.device("cuda" if torch.cuda.is_available() and not a.cpu else "cpu")
     if a.policy == "nitrogen":
         from nitrogen_backend import NitroGenBackend
         backend = NitroGenBackend(root, dev)
+        if a.ng_ft:
+            backend.follow(root / "ng-ckpt", a.poll_s)
     elif a.policy == "vpt":
         from vpt_backend import VPTBackend
         backend = VPTBackend(root, a.vpt_weights, dev)

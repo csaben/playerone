@@ -85,11 +85,40 @@ class NitroGenBackend:
         for _ in range(2):  # warm up
             self._infer(np.zeros((256, 256, 3), np.uint8), None)
 
+    def follow(self, ckpt_dir: Path, poll_s: float = 2.0) -> None:
+        """Serve fine-tuned weights from nitrogen_train.py ($DATA/ng-ckpt) on top of the base (name ngft)."""
+        self.ft_dir, self.poll_s, self.name = ckpt_dir, poll_s, "ngft"
+        self.version, self.ft_step, self.ft_info = f"{self.version} (base, no fine-tune yet)", 0, None
+
     async def watch(self):
-        return
+        import asyncio
+        import json
+        if not getattr(self, "ft_dir", None):
+            return  # static base weights
+        seen = None
+        while True:
+            try:
+                info = json.loads((self.ft_dir / "latest.json").read_text())
+                if info.get("version") != seen:
+                    seen = info["version"]
+                    # trainable params only (vision tower stays base); load to GPU off the event loop, then swap
+                    sd = await asyncio.to_thread(torch.load, self.ft_dir / info["path"], map_location=self.device)
+                    self.model.load_state_dict(sd, strict=False)
+                    del sd
+                    self.version, self.ft_step, self.ft_info = info["version"], int(info["step"]), info
+                    self.loaded_at = time.time()
+                    print(f"[reload] {self.version} step={self.ft_step} n_frames={info.get('n_frames')}", flush=True)
+            except FileNotFoundError:
+                pass
+            except Exception as e:  # noqa: BLE001
+                print(f"[reload] failed: {e!r}", flush=True)
+                seen = None
+            await asyncio.sleep(self.poll_s)
 
     def status(self) -> dict:
-        return {"state": "serving", "version": self.version, "step": 0, "ckpt_n_frames": None,
+        ft = getattr(self, "ft_info", None) or {}
+        return {"state": "serving", "version": self.version, "step": getattr(self, "ft_step", 0),
+                "ckpt_n_frames": ft.get("n_frames"), "fresh": ft.get("fresh"),
                 "loaded_at": self.loaded_at, "action_space": "pad", "n_games": len(self.games)}
 
     def new_conn(self) -> dict:
@@ -144,4 +173,4 @@ class NitroGenBackend:
         pad = {"lx": c(jl[0]), "ly": c(-jl[1]), "rx": c(jr[0]), "ry": c(-jr[1]),
                "lt": round(lt, 3), "rt": round(rt, 3), "buttons": held}
         return {"pad": pad, "version": self.version,  # no keys/mb/cam: absent = sidecar leaves KBM alone
-                "infer_ms": round(infer_ms, 2), "step": 0}
+                "infer_ms": round(infer_ms, 2), "step": getattr(self, "ft_step", 0)}

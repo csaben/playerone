@@ -69,6 +69,7 @@ def status(root: Path) -> dict:
               for p in sorted((root / "status").glob("serve-*.json"))} if (root / "status").is_dir() else {}
     return {"ok": True, "now": time.time(), "ingest": ingest,
             "train": _read_status(root, "train"), "vpttrain": _read_status(root, "vpttrain"),
+            "ngtrain": _read_status(root, "ngtrain"),
             "serve": _read_status(root, "serve"),
             "models": models}  # every policy server by name ("bc", "vpt", ...), each with policy/port/version
 

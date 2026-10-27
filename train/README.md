@@ -133,3 +133,22 @@ This serves NVIDIA's open gamepad foundation model NitroGen (github MineDojo/Nit
 Controller labels for fine-tuning: `build_labels` now also returns `pad_axes` (n,6) and `pad_btn` (n,14) from p0.jsonl `axes`/`buttons`.
 
 Note (2026-10-19): the BC `train`/`serve` and base `vpt` tmux windows were stopped to free GPU 0 for NitroGen. Restart them with the commands above if needed.
+
+## NitroGen fine-tuning (`nitrogen_train.py`, tmux window `ngtrain`, GPU 1) and `ngft` (port 8966)
+
+Same loop shape as `vpt_train.py` (5 s refresh, recent share, takeover weights, `--max-epochs 10` counted as `step·batch / n_frames`), on controller play only: chunks with no human pad input are skipped, and `--label <regex>` filters on the window title (e.g. `Arceus`).
+
+- **Frames:** 256×256 cv2 INTER_AREA, as the backend sees them, cached as `cache/<sid>/<key>.ng256.frames.npy` (about 196 KB per frame).
+- **Labels:** for frame i, the 18 actions on NitroGen's 60 Hz grid starting `action_shift` (3) steps later, each the latest recorded pad state at t_i + (3+k)/60 s. Only frames whose window fits in the chunk are targets. Layout is the tokenizer's: 21 buttons in `BUTTON_ACTION_TOKENS` order (triggers are the LEFT/RIGHT_TRIGGER entries), then sticks mapped to [0,1] with y = +down. GUIDE and the RIGHT_* aliases are masked out of the loss.
+- **Training:** NitroGen's own flow-matching loss, batch 16, AdamW lr 1e-5 wd 0.01, clip 1, bf16 autocast over fp32 weights. The SigLIP tower is frozen (`--train-vision` unfreezes it), leaving 178M trainable params, about 5.4 GB and 4.4 steps/s on a 3090.
+- **Open files:** every cached chunk stays memory-mapped, so the trainer raises its `RLIMIT_NOFILE` soft limit to the hard limit.
+- **Metrics:** `[base]` scores the untouched model on the last 20 chunks. "Fresh" scores new chunks before training on them: flow loss (fixed noise), `stick_mae` in [-1,1] units, `lstick_mae_moving`, button recall/precision and `trigger_mae`, all on the first sampled action.
+- **Checkpoint:** `$DATA/ng-ckpt/latest.weights` holds only the trainable params; `latest.json` holds `{version: "ngft:<step>-<ts>", base, step, n_frames, fresh, ...}`. `serve.py --policy nitrogen --ng-ft` (tmux `ngft`, :8966, GPU 0) loads them over the base `ng.pt` and hot-reloads.
+- **Status:** `/status` includes `ngtrain` and `models.ngft`.
+
+```bash
+tmux new-window -d -t p1train: -n ngtrain "uv run --extra vpt --extra nitrogen python -u nitrogen_train.py 2>&1 | tee -a ~/player-one-data/ngtrain.log"
+tmux new-window -d -t p1train: -n ngft "uv run --extra vpt --extra nitrogen python -u serve.py --policy nitrogen --ng-ft 2>&1 | tee -a ~/player-one-data/serve-ngft.log"
+```
+
+Note (2026-10-26): the BC/VPT servers and `vpttrain` had been SIGSTOPped (state `T`) since 2026-10-25 10:43 by someone unknown. `nitrogen` was resumed with `kill -CONT`; `vptft` and `vpttrain` are still stopped.
