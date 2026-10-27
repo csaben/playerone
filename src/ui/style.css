@@ -105,8 +105,8 @@ svg circle[r=".9"] { fill: currentColor; stroke: none; }
 .row.stat { cursor: default; }
 .row.stat:hover { background: none; }
 .row .mid { flex: 1; min-width: 0; }
-.row .t1 { display: flex; gap: 6px; align-items: baseline; }
-.row .nm { font-weight: 600; font-size: 12.8px; white-space: nowrap; }
+.row .t1 { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.row .nm { font-weight: 600; font-size: 12.8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .row .kind { color: var(--dim); font-size: 11px; }
 .row .t2 { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
 .row .t2.mail { color: var(--claude); opacity: .85; }
@@ -165,7 +165,7 @@ kbd { font-family: var(--sans); font-size: 10.5px; font-weight: 600; background:
 #b-rec.live .core { animation: rec 1.6s ease-in-out infinite; }
 .chip.rec { color: #ffb3ad; background: rgba(229, 83, 75, .16); display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
 .chip.rec i { width: 6px; height: 6px; border-radius: 50%; background: #e5534b; animation: rec 1.6s ease-in-out infinite; }
-.row .chip { margin-left: 4px; }
+.row .chip { margin-left: 4px; flex: none; white-space: nowrap; }
 
 /* record card: device checks, dataset radios, the "other dataset" box */
 .row .check { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid #4a4e57; flex: none; }

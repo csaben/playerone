@@ -109,7 +109,7 @@ function windowsCard() {
     const r = w.rec;
     return `<div class="row ${a ? 'on' : ''} ${i++ === kb ? 'kb' : ''}" data-attach="${esc(w.key)}">
       <span class="ico">${w.icon ? `<img src="${w.icon}" alt="">` : WIN}</span>
-      <div class="mid"><div class="t1"><span class="nm">${esc(w.title)}</span></div>
+      <div class="mid"><div class="t1"><span class="nm" title="${esc(w.title)}">${esc(w.title)}</span></div>
       <div class="t2">${esc(w.app)}${a && a.error ? ` · ${esc(a.error)}` : ''}</div></div>
       ${r ? recChip(r) : ''}
       ${a ? `${chip(a)}<span class="age">${esc(ago(a.at))}</span><button class="icon" data-detach="${esc(w.key)}" title="Detach">${X}</button>` : ''}</div>`;
@@ -216,7 +216,7 @@ function modelRows(m, playing) {
     const s = a.stats;
     const sub = s ? `${a.bridge ? 'via mod (plays in background) · ' : ''}${a.pad ? 'virtual controller · ' : ''}rtt ${Math.round(s.rtt)} ms · ${Math.round(s.fps)} fps · model ${(s.infer || 0).toFixed(1)} ms` : esc(a.error || 'connecting…');
     return `<div class="row stat"><span class="ico">${w.icon ? `<img src="${w.icon}" alt="">` : WIN}</span>
-      <div class="mid"><div class="t1"><span class="nm">${esc(w.title)}</span></div><div class="t2">${sub}</div></div>${chip(a)}</div>`;
+      <div class="mid"><div class="t1"><span class="nm" title="${esc(w.title)}">${esc(w.title)}</span></div><div class="t2">${sub}</div></div>${chip(a)}</div>`;
   }).join('');
   // the BC pipeline only while it's running or picked; recordings feed every trainer either way
   const bcShown = picked === 'bc' || tr.state !== 'down';
