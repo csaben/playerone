@@ -192,7 +192,8 @@ function modelRows(m, playing) {
   const picked = (S.play && S.play.model) || 'bc';
   const models = m.models || { bc: sv };
   let i = 0;
-  const top = Object.entries(models).map(([name, ms]) => {
+  // a model whose server is down (stopped on cradle) is hidden unless it's the picked one
+  const top = Object.entries(models).filter(([name, ms]) => ms.state !== 'down' || name === picked).map(([name, ms]) => {
     const st = (playing.find((w) => w.attached.stats && (w.attached.model || 'bc') === name) || { attached: {} }).attached.stats;
     const down = name === 'bc' ? [['recording in', ing.state], ['trainer', tr.state], ['server', ms.state]] : [['server', ms.state]];
     const bad = down.filter(([, s]) => s === 'down').map(([n]) => n);
@@ -216,13 +217,15 @@ function modelRows(m, playing) {
     return `<div class="row stat"><span class="ico">${w.icon ? `<img src="${w.icon}" alt="">` : WIN}</span>
       <div class="mid"><div class="t1"><span class="nm">${esc(w.title)}</span></div><div class="t2">${sub}</div></div>${chip(a)}</div>`;
   }).join('');
+  // the BC pipeline only while it's running or picked; recordings feed every trainer either way
+  const bcShown = picked === 'bc' || tr.state !== 'down';
   return top
     + (plays ? `<div class="host"><span class="dot" style="background:#3fcf74"></span>Playing<span class="count">${playing.length}</span></div>${plays}` : '')
-    + '<div class="host"><span class="dot" style="background:var(--dim)"></span>Behavior clone pipeline</div>'
+    + (!bcShown ? stat(DISK, 'Recorded', play, null) : '<div class="host"><span class="dot" style="background:var(--dim)"></span>Behavior clone pipeline</div>'
     + stat(DISK, 'Recorded', play, null)
     + stat(PAD, 'Training', train, [(tr.state || '?').split(':')[0], tone(tr.state)])
     + (tr.step != null ? stat(KEYS, Object.keys(fresh).length ? 'On new play' : 'On seen play', acc, null) : '')
-    + stat(CLOUD, 'Serving', serve, [sv.state || '?', tone(sv.state)]);
+    + stat(CLOUD, 'Serving', serve, [sv.state || '?', tone(sv.state)]));
 }
 
 // The settings view: how a model plays. Each row cycles through the values main.js allows

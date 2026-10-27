@@ -26,7 +26,7 @@ let prev = ''; // the window that had the keyboard when the panel opened
 const attached = new Map(); // hwnd -> { agent, at, status: 'running' | 'done' | 'error', error }
 const icons = new Map(); // exe path -> data URL
 const helper = new Helper();
-const recorder = new Recorder();
+const recorder = new Recorder(path.join(app.getPath('userData'), 'rec.log'));
 const shipper = new Shipper();
 // hwnd -> { title, app, at, status: 'recording' | 'saving' | 'saved' | 'error', dir, error, upload }
 const recordings = new Map();

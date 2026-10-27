@@ -17,9 +17,21 @@ function exePath() {
   return null;
 }
 
+// The sidecar's stderr and its event lines, for debugging play; restarted past 5 MB.
+function openLog(file) {
+  if (!file) return () => {};
+  try { if (fs.statSync(file).size > 5e6) fs.rmSync(file); } catch {}
+  return (kind, text) => {
+    const t = new Date().toISOString().slice(11, 23);
+    const lines = text.split('\n').filter((l) => l.trim());
+    try { fs.appendFileSync(file, lines.map((l) => `${t} ${kind} ${l.trimEnd()}\n`).join('')); } catch {}
+  };
+}
+
 class Recorder extends EventEmitter {
-  constructor() {
+  constructor(logFile) {
     super();
+    this.log = openLog(logFile);
     this.proc = null;
     this.buf = '';
     this.waits = new Map();
@@ -42,13 +54,15 @@ class Recorder extends EventEmitter {
         if (!line) continue;
         let m;
         try { m = JSON.parse(line); } catch { continue; }
-        if (m.event) { this.emit(m.event, m); continue; }
+        if (m.event) { this.log('event', line); this.emit(m.event, m); continue; }
         const w = this.waits.get(m.id);
         if (w) { this.waits.delete(m.id); w(m); }
       }
     });
-    proc.stderr.on('data', () => {});
-    proc.on('exit', () => {
+    proc.stderr.setEncoding('utf8');
+    proc.stderr.on('data', (d) => this.log('stderr', d));
+    proc.on('exit', (code) => {
+      this.log('exit', `code ${code}`);
       if (this.proc === proc) this.proc = null;
       for (const w of this.waits.values()) w({ ok: false, error: 'recorder exited' });
       this.waits.clear();
